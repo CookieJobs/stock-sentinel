@@ -140,7 +140,7 @@ class StockMonitor:
 
             data = DataFetcher.get_stock_info(ticker, self.api_key)
             name = ticker
-            market = "US"
+            market = DataFetcher.detect_market(ticker)
             current_price = None
             change_pct = None
             ah_change_pct = None

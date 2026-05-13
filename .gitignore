@@ -41,6 +41,9 @@ backend/__pycache__/
 backend/*.pyc
 backend/.env
 *.db
+*.db-shm
+*.db-wal
+*.db-journal
 
 # Frontend
 frontend/node_modules/
