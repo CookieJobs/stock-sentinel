@@ -55,6 +55,6 @@ ALERT_DEDUP_HOURS=24
 
 ## Todo
 
-- [ ] `01-alert-backend.md` — 后端告警核心逻辑
-- [ ] `02-alert-frontend-settings.md` — 前端通知渠道配置 UI
+- [x] `01-alert-backend.md` — 后端告警核心逻辑
+- [x] `02-alert-frontend-settings.md` — 前端通知渠道配置 UI
 - [ ] `03-alert-history.md` — 告警历史记录

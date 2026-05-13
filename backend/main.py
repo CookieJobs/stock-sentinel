@@ -164,6 +164,28 @@ def trigger_alert_check():
     return {"detail": "触发成功"}
 
 
+@app.get("/api/alerts/history")
+def get_alert_history(limit: int = 50):
+    """获取历史告警记录"""
+    return alerter.unread.get_history(limit)
+
+
+@app.delete("/api/alerts/history/{alert_id}")
+def delete_alert_history(alert_id: int):
+    """删除单条历史告警"""
+    ok = alerter.unread.delete_history(alert_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="记录未找到")
+    return {"detail": "已删除"}
+
+
+@app.delete("/api/alerts/history")
+def clear_alert_history():
+    """清除所有历史告警"""
+    alerter.unread.clear_history()
+    return {"detail": "已清除所有历史"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

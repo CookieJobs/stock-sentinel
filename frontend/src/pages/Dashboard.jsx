@@ -42,11 +42,19 @@ export default function Dashboard() {
   const [stocks, setStocks] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [marketFilter, setMarketFilter] = useState('all')
-  const [sortConfig, setSortConfig] = useState({ key: 'drawdown_pct', direction: 'desc' })
+  const [sortConfig, setSortConfig] = useState({ key: 'drawdown', direction: 'desc' })
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [refreshProgress, setRefreshProgress] = useState(null) // {total, done, current, status}
+  const [refreshProgress, setRefreshProgress] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [refreshingStock, setRefreshingStock] = useState(null)
+
+  // Alert panel
+  const [alertCount, setAlertCount] = useState(0)
+  const [alerts, setAlerts] = useState([])
+  const [alertHistory, setAlertHistory] = useState([])
+  const [showAlerts, setShowAlerts] = useState(false)
+  const [alertTab, setAlertTab] = useState('unread') // 'unread' | 'history'
 
   // Add stock modal
   const [showAddModal, setShowAddModal] = useState(false)
@@ -57,7 +65,7 @@ export default function Dashboard() {
   const [addError, setAddError] = useState('')
 
   // Delete confirmation
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null) // stock object or null
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
   const [deletingStock, setDeletingStock] = useState(false)
 
   const fetchData = useCallback(async () => {
@@ -74,20 +82,54 @@ export default function Dashboard() {
     }
   }, [])
 
+  const fetchAlertCount = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/alerts/count`)
+      if (!res.ok) return
+      const data = await res.json()
+      setAlertCount(data.count)
+    } catch (err) {
+      console.error('Alert count error:', err)
+    }
+  }, [])
+
+  const fetchAlertList = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/alerts/`)
+      if (!res.ok) return
+      const data = await res.json()
+      setAlerts(data)
+    } catch (err) {
+      console.error('Alert list error:', err)
+    }
+  }, [])
+
+  const fetchAlertHistory = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/alerts/history`)
+      if (!res.ok) return
+      const data = await res.json()
+      setAlertHistory(data)
+    } catch (err) {
+      console.error('Alert history error:', err)
+    }
+  }, [])
+
   useEffect(() => {
     fetchData()
-  }, [fetchData])
+    fetchAlertCount()
+    const interval = setInterval(fetchAlertCount, 30000)
+    return () => clearInterval(interval)
+  }, [fetchData, fetchAlertCount])
 
   const handleRefresh = async () => {
     setRefreshing(true)
     setRefreshProgress({ total: 0, done: 0, current: '', status: 'starting' })
     try {
-      // 1. 启动后台刷新
       const startRes = await fetch(`${API_BASE}/stocks/refresh`, { method: 'POST' })
       if (!startRes.ok) throw new Error('启动刷新失败')
-      const { task_id, total } = await startRes.json()
+      const { task_id } = await startRes.json()
 
-      // 2. 轮询进度
       const poll = async () => {
         const res = await fetch(`${API_BASE}/stocks/refresh/progress?task_id=${task_id}`)
         if (!res.ok) return null
@@ -103,7 +145,6 @@ export default function Dashboard() {
         await new Promise((r) => setTimeout(r, 400))
       }
 
-      // 3. 完成：刷新数据
       if (progress?.status === 'completed') {
         await fetchData()
       } else if (progress?.status === 'error') {
@@ -113,7 +154,6 @@ export default function Dashboard() {
       console.error('Refresh error:', err)
     } finally {
       setRefreshing(false)
-      // 延迟清除进度条，让用户看到 100%
       setTimeout(() => setRefreshProgress(null), 1200)
     }
   }
@@ -149,6 +189,20 @@ export default function Dashboard() {
       setAddError(err.message)
     } finally {
       setAddLoading(false)
+    }
+  }
+
+  const handleRefreshStock = async (ticker) => {
+    setRefreshingStock(ticker)
+    try {
+      const res = await fetch(`${API_BASE}/stocks/${ticker}/refresh`)
+      if (res.ok) {
+        await fetchData()
+      }
+    } catch (err) {
+      console.error('Refresh stock error:', err)
+    } finally {
+      setRefreshingStock(null)
     }
   }
 
@@ -204,29 +258,28 @@ export default function Dashboard() {
     return sorted
   }, [filteredStocks, sortConfig])
 
-  // Stats calculations
   const stats = useMemo(() => {
     const total = stocks.length
     const usCount = stocks.filter((s) => s.market === 'US').length
     const cnCount = stocks.filter((s) => s.market === 'CN').length
     const hkCount = stocks.filter((s) => s.market === 'HK').length
 
-    const drawdowns = stocks.map((s) => s.drawdown_pct).filter((v) => v != null)
+    const drawdowns = stocks.map((s) => s.drawdown).filter((v) => v != null)
     const avgDrawdown =
       drawdowns.length > 0
         ? (drawdowns.reduce((a, b) => a + b, 0) / drawdowns.length).toFixed(2)
         : '--'
 
     const overThreshold = stocks.filter((s) => {
-      if (s.drawdown_pct == null || s.threshold == null) return false
-      return s.drawdown_pct >= Math.abs(s.threshold)
+      if (s.drawdown == null || s.threshold == null) return false
+      return s.drawdown >= Math.abs(s.threshold)
     }).length
 
     let maxStock = null
     let maxDrawdown = -Infinity
     stocks.forEach((s) => {
-      if (s.drawdown_pct != null && s.drawdown_pct > maxDrawdown) {
-        maxDrawdown = s.drawdown_pct
+      if (s.drawdown != null && s.drawdown > maxDrawdown) {
+        maxDrawdown = s.drawdown
         maxStock = s
       }
     })
@@ -243,9 +296,9 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-sent-card border border-sent-border rounded-lg p-4">
           <div className="text-xs text-sent-dim mb-1">监控股票</div>
           <div className="text-2xl font-bold">{stats.total}</div>
@@ -294,7 +347,7 @@ export default function Dashboard() {
       {/* Main Table */}
       <div className="bg-sent-card border border-sent-border rounded-lg">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-sent-border flex flex-wrap items-center justify-between gap-3">
+        <div className="px-4 py-3 border-b border-sent-border flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-semibold">📈 股票监控</h2>
             {lastUpdated && (
@@ -332,6 +385,21 @@ export default function Dashboard() {
               ＋ 添加
             </button>
             <button
+              onClick={() => {
+                fetchAlertList()
+                fetchAlertHistory()
+                setShowAlerts(true)
+              }}
+              className="relative px-3 py-1.5 text-xs bg-sent-border/50 text-sent-dim rounded-lg hover:text-white hover:bg-sent-border transition-colors"
+            >
+              🔔 告警
+              {alertCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-sent-red text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                  {alertCount > 9 ? '9+' : alertCount}
+                </span>
+              )}
+            </button>
+            <button
               onClick={handleRefresh}
               disabled={refreshing}
               className="px-3 py-1.5 text-xs bg-sent-border/50 text-sent-dim rounded-lg hover:text-white hover:bg-sent-border transition-colors disabled:opacity-50"
@@ -343,7 +411,7 @@ export default function Dashboard() {
 
         {/* Refresh Progress Bar */}
         {refreshProgress && (
-          <div className="px-6 py-2.5 border-b border-sent-border bg-sent-bg/50">
+          <div className="px-4 py-2 border-b border-sent-border bg-sent-bg/50">
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <div className="flex justify-between text-xs mb-1.5">
@@ -382,7 +450,7 @@ export default function Dashboard() {
         )}
 
         {/* Search */}
-        <div className="px-6 py-3 border-b border-sent-border">
+        <div className="px-4 py-2.5 border-b border-sent-border">
           <input
             type="text"
             placeholder="搜索股票代码或名称..."
@@ -397,49 +465,19 @@ export default function Dashboard() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-sent-border text-sent-dim text-xs">
-                <th
-                  className="px-4 py-3 text-left cursor-pointer hover:text-white"
-                  onClick={() => handleSort('ticker')}
-                >
-                  代码 <SortIcon column="ticker" sortConfig={sortConfig} />
-                </th>
-                <th
-                  className="px-4 py-3 text-left cursor-pointer hover:text-white"
-                  onClick={() => handleSort('name')}
-                >
-                  名称 <SortIcon column="name" sortConfig={sortConfig} />
-                </th>
-                <th className="px-4 py-3 text-left whitespace-nowrap">市场</th>
-                <th className="px-4 py-3 text-left whitespace-nowrap">板块</th>
-                <th
-                  className="px-4 py-3 text-right cursor-pointer hover:text-white"
-                  onClick={() => handleSort('price')}
-                >
-                  现价 <SortIcon column="price" sortConfig={sortConfig} />
-                </th>
-                <th
-                  className="px-4 py-3 text-right cursor-pointer hover:text-white"
-                  onClick={() => handleSort('change_pct')}
-                >
-                  涨跌 <SortIcon column="change_pct" sortConfig={sortConfig} />
-                </th>
-                <th className="px-4 py-3 text-right whitespace-nowrap">52W高</th>
-                <th className="px-4 py-3 text-right whitespace-nowrap">52W高日期</th>
-                <th
-                  className="px-4 py-3 text-right whitespace-nowrap cursor-pointer hover:text-white"
-                  onClick={() => handleSort('drawdown')}
-                >
-                  回撤 <SortIcon column="drawdown" sortConfig={sortConfig} />
-                </th>
-                <th className="px-4 py-3 text-right whitespace-nowrap">阈值</th>
-                <th
-                  className="px-4 py-3 text-right whitespace-nowrap cursor-pointer hover:text-white"
-                  onClick={() => handleSort('pe_ratio')}
-                >
-                  P/E
-                </th>
-                <th className="px-4 py-3 text-right whitespace-nowrap">距低</th>
-                <th className="px-4 py-3 text-center">操作</th>
+                <th className="px-3 py-2.5 text-left cursor-pointer hover:text-white" onClick={() => handleSort('ticker')}>代码 <SortIcon column="ticker" sortConfig={sortConfig} /></th>
+                <th className="px-3 py-2.5 text-left cursor-pointer hover:text-white" onClick={() => handleSort('name')}>名称 <SortIcon column="name" sortConfig={sortConfig} /></th>
+                <th className="px-3 py-2.5 text-left whitespace-nowrap">市场</th>
+                <th className="px-3 py-2.5 text-left whitespace-nowrap">板块</th>
+                <th className="px-3 py-2.5 text-right cursor-pointer hover:text-white" onClick={() => handleSort('price')}>现价 <SortIcon column="price" sortConfig={sortConfig} /></th>
+                <th className="px-3 py-2.5 text-right cursor-pointer hover:text-white" onClick={() => handleSort('change_pct')}>涨跌 <SortIcon column="change_pct" sortConfig={sortConfig} /></th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap">52W高</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap">52W高日期</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleSort('drawdown')}>回撤 <SortIcon column="drawdown" sortConfig={sortConfig} /></th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap">阈值</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleSort('pe_ratio')}>P/E</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap">距低</th>
+                <th className="px-3 py-2.5 text-center">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -455,9 +493,9 @@ export default function Dashboard() {
                     key={stock.id}
                     className="border-b border-sent-border/50 hover:bg-white/[0.02] transition-colors"
                   >
-                    <td className="px-4 py-3 font-mono text-white whitespace-nowrap">{stock.ticker}</td>
-                    <td className="px-4 py-3 text-white whitespace-nowrap">{stock.name || '--'}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="px-3 py-2.5 font-mono text-white whitespace-nowrap">{stock.ticker}</td>
+                    <td className="px-3 py-2.5 text-white whitespace-nowrap">{stock.name || '--'}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       <span
                         className={`inline-block px-2 py-0.5 rounded text-xs ${getMarketBadgeClass(
                           stock.market
@@ -466,7 +504,7 @@ export default function Dashboard() {
                         {getMarketLabel(stock.market)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       {stock.sector ? (
                         <span className="inline-block px-2 py-0.5 rounded text-xs bg-sent-border/50 text-sent-dim">
                           {stock.sector}
@@ -475,45 +513,51 @@ export default function Dashboard() {
                         <span className="text-sent-dim">--</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap">
                       {stock.current_price != null
                         ? `${getCurrency(stock.market)}${Number(stock.current_price).toFixed(2)}`
                         : '--'}
                     </td>
-                    <td
-                      className={`px-4 py-3 text-right font-mono whitespace-nowrap ${getChangeClass(stock.change_pct)}`}
-                    >
+                    <td className={`px-3 py-2.5 text-right font-mono whitespace-nowrap ${getChangeClass(stock.change_pct)}`}>
                       {stock.change_pct != null
                         ? (stock.market === 'US' && stock.ah_change_label
                             ? <span className="inline-flex items-center gap-1"><span className="text-sent-dim">[{stock.ah_change_label}]</span><span className={stock.ah_change_pct >= 0 ? 'text-sent-green' : 'text-sent-red'}>{stock.ah_change_pct >= 0 ? '+' : ''}{Number(stock.ah_change_pct).toFixed(2)}%</span></span>
                             : `${stock.change_pct >= 0 ? '+' : ''}${Number(stock.change_pct).toFixed(2)}%`)
                         : '--'}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-sent-dim whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-right font-mono text-sent-dim whitespace-nowrap">
                       {stock.week52_high != null
                         ? `${getCurrency(stock.market)}${Number(stock.week52_high).toFixed(2)}`
                         : '--'}
                     </td>
-                    <td className="px-4 py-3 text-right text-sent-dim text-xs whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-right text-sent-dim text-xs whitespace-nowrap">
                       {stock.week52_high_date || '--'}
                     </td>
-                    <td className={`px-4 py-3 text-right font-mono whitespace-nowrap ${getDrawdownClass(stock.drawdown)}`}>
+                    <td className={`px-3 py-2.5 text-right font-mono whitespace-nowrap ${getDrawdownClass(stock.drawdown)}`}>
                       {stock.drawdown != null
                         ? `${Number(stock.drawdown).toFixed(2)}%`
                         : '--'}
                     </td>
-                    <td className="px-4 py-3 text-right text-sent-dim whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-right text-sent-dim whitespace-nowrap">
                       {stock.threshold != null ? `${Math.abs(stock.threshold)}%` : '--'}
                     </td>
-                    <td className="px-4 py-3 text-right text-sent-dim whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-right text-sent-dim whitespace-nowrap">
                       {stock.pe_ratio != null ? Number(stock.pe_ratio).toFixed(1) : '--'}
                     </td>
-                    <td className="px-4 py-3 text-right text-sent-dim whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-right text-sent-dim whitespace-nowrap">
                       {stock.distance_low_pct != null
                         ? `${Number(stock.distance_low_pct).toFixed(1)}%`
                         : '--'}
                     </td>
-                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                      <button
+                        onClick={() => handleRefreshStock(stock.ticker)}
+                        disabled={refreshingStock === stock.ticker}
+                        className="text-sent-dim hover:text-sent-blue transition-colors p-1 disabled:opacity-50"
+                        title="刷新"
+                      >
+                        {refreshingStock === stock.ticker ? '⏳' : '🔄'}
+                      </button>
                       <button
                         onClick={() => setShowDeleteConfirm(stock)}
                         className="text-sent-dim hover:text-sent-red transition-colors p-1"
@@ -590,6 +634,130 @@ export default function Dashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Alert Panel Modal */}
+      {showAlerts && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowAlerts(false)} />
+          <div className="relative bg-sent-card border border-sent-border rounded-xl p-6 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">🔔 告警通知</h3>
+              <button
+                onClick={() => setShowAlerts(false)}
+                className="text-sent-dim hover:text-white text-xl"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Tab switcher */}
+            <div className="flex bg-sent-border/30 rounded-lg p-0.5 mb-4">
+              <button
+                onClick={() => setAlertTab('unread')}
+                className={`flex-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
+                  alertTab === 'unread'
+                    ? 'bg-sent-blue text-white'
+                    : 'text-sent-dim hover:text-white'
+                }`}
+              >
+                未读 ({alertCount})
+              </button>
+              <button
+                onClick={() => setAlertTab('history')}
+                className={`flex-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
+                  alertTab === 'history'
+                    ? 'bg-sent-blue text-white'
+                    : 'text-sent-dim hover:text-white'
+                }`}
+              >
+                历史
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3">
+              {alertTab === 'unread' ? (
+                alerts.length === 0 ? (
+                  <p className="text-sent-dim text-center py-8">暂无未读告警</p>
+                ) : (
+                  alerts.map((alert, i) => {
+                    const currency = alert.market === 'CN' ? '¥' : alert.market === 'HK' ? 'HK$' : '$'
+                    return (
+                      <div key={alert.id || i} className="bg-sent-bg border border-sent-border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-mono font-bold text-white">{alert.ticker}</span>
+                          <span className="text-xs text-sent-dim">
+                            {alert.created_at ? new Date(alert.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--'}
+                          </span>
+                        </div>
+                        <div className="text-sm text-sent-dim space-y-1">
+                          <div>{alert.name || alert.ticker}</div>
+                          <div className="flex gap-4">
+                            <span>回撤：<span className="text-sent-red font-mono">{alert.drawdown_pct != null ? `${Number(alert.drawdown_pct).toFixed(2)}%` : '--'}</span></span>
+                            <span>阈值：<span className="text-sent-yellow font-mono">{alert.threshold != null ? `${Math.abs(alert.threshold).toFixed(2)}%` : '--'}</span></span>
+                          </div>
+                          <div>现价：{currency}{alert.current_price != null ? Number(alert.current_price).toFixed(2) : '--'}</div>
+                        </div>
+                      </div>
+                    )
+                  })
+                )
+              ) : (
+                alertHistory.length === 0 ? (
+                  <p className="text-sent-dim text-center py-8">暂无历史记录</p>
+                ) : (
+                  alertHistory.map((h, i) => (
+                    <div key={h.id || i} className="bg-sent-bg border border-sent-border rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-mono font-bold text-white">{h.ticker}</span>
+                        <span className="text-xs text-sent-dim">
+                          {h.sent_date || h.sent_at || '--'}
+                        </span>
+                      </div>
+                      <div className="text-sm text-sent-dim">
+                        触发时间：{h.sent_at ? new Date(h.sent_at).toLocaleString('zh-CN') : '--'}
+                      </div>
+                    </div>
+                  ))
+                )
+              )}
+            </div>
+
+            <div className="pt-4 border-t border-sent-border flex gap-3">
+              {alertTab === 'unread' && alertCount > 0 && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await fetch(`${API_BASE}/alerts/clear`, { method: 'POST' })
+                      setAlertCount(0)
+                      setAlerts([])
+                    } catch (err) {
+                      console.error('Clear alerts error:', err)
+                    }
+                  }}
+                  className="flex-1 px-4 py-2 bg-sent-red/20 text-sent-red rounded-lg hover:bg-sent-red/30 transition-colors text-sm"
+                >
+                  清除所有
+                </button>
+              )}
+              {alertTab === 'history' && alertHistory.length > 0 && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await fetch(`${API_BASE}/alerts/history`, { method: 'DELETE' })
+                      setAlertHistory([])
+                    } catch (err) {
+                      console.error('Clear history error:', err)
+                    }
+                  }}
+                  className="flex-1 px-4 py-2 bg-sent-border/50 text-sent-dim rounded-lg hover:text-white hover:bg-sent-border transition-colors text-sm"
+                >
+                  清除历史
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -100,6 +100,37 @@ class AlertUnreadStore:
         finally:
             conn.close()
 
+    def get_history(self, limit: int = 50) -> list:
+        from database import get_db
+        conn = get_db()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM alert_history ORDER BY sent_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def delete_history(self, alert_id: int) -> bool:
+        from database import get_db
+        conn = get_db()
+        try:
+            cursor = conn.execute("DELETE FROM alert_history WHERE id = ?", (alert_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def clear_history(self):
+        from database import get_db
+        conn = get_db()
+        try:
+            conn.execute("DELETE FROM alert_history")
+            conn.commit()
+        finally:
+            conn.close()
+
 
 def format_alert_message(stock: StockResponse) -> str:
     currency = {"CN": "¥", "HK": "HK$", "US": "$"}.get(stock.market, "$")
