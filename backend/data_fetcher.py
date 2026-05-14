@@ -353,7 +353,8 @@ class DataFetcher:
             current_price = current / 100
             change_pct_raw = data.get("f170")
             change_pct = (change_pct_raw / 100) if change_pct_raw is not None else None
-            name = data.get("f57", ticker)
+            # f58 是名称, f57 是代码（备用回退）
+            name = data.get("f58") or data.get("f57") or ticker
             pe_raw = data.get("f162")
             pe_ratio = (pe_raw / 100) if pe_raw is not None and pe_raw != "-" else None
 
@@ -441,9 +442,10 @@ class DataFetcher:
 
     @staticmethod
     def _get_eastmoney_hk_quote(ticker: str) -> Optional[Dict[str, Any]]:
-        """从东方财富获取港股行情，通过 K 线接口计算 52 周高低点。
+        """从东方财富获取港股行情，通过日 K 线接口计算 52 周高低点。
 
         fltt=2 → 价格已正确缩放（无需 /100）
+        fqt=1 → 前复权（与 A 股一致，保证 52 周高低点可比）
         """
         def _retry_get(url: str, params: dict, timeout: int, max_retries: int = 2) -> Optional[requests.Response]:
             """带短暂等待的重试 GET"""
@@ -466,7 +468,7 @@ class DataFetcher:
                 EASTMONEY_QUOTE_URL,
                 params={
                     "secid": secid,
-                    "fields": "f43,f57,f58,f169,f170,f173",
+                    "fields": "f43,f57,f58,f162,f170",
                     "invt": "2",
                     "fltt": "2",
                 },
@@ -478,13 +480,15 @@ class DataFetcher:
             if not data:
                 return None
 
-            # fltt=2: f43 价格无需缩放, f170 涨跌幅已正确, f173 是 PE
+            # fltt=2: f43 价格无需缩放, f170 涨跌幅已正确
             current_price = data.get("f43")
             if current_price is None:
                 return None
             change_pct = data.get("f170")
-            name = data.get("f57", ticker)
-            pe_raw = data.get("f173")
+            # f58 是名称, f57 是代码（备用回退）
+            name = data.get("f58") or data.get("f57", ticker)
+            # PE: 港股优先 f162（同 A 股），备用 f173
+            pe_raw = data.get("f162") or data.get("f173")
             pe_ratio = pe_raw if (pe_raw is not None and pe_raw != "-") else None
 
             # ── K 线: 52 周高低点 ──
@@ -501,9 +505,9 @@ class DataFetcher:
                         "fields1": "f1,f2,f3,f4,f5,f6",
                         "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
                         "klt": "101",
-                        "fqt": "0",
+                        "fqt": "1",
                         "end": "20500101",
-                        "lmt": "260",
+                        "lmt": "300",
                     },
                     timeout=15,
                 )
