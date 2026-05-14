@@ -2,6 +2,7 @@
 import os
 import json
 import logging
+import time
 import requests
 from typing import Optional, Dict, Any
 from datetime import datetime
@@ -437,11 +438,24 @@ class DataFetcher:
 
         fltt=2 → 价格已正确缩放（无需 /100）
         """
+        def _retry_get(url: str, params: dict, timeout: int, max_retries: int = 2) -> Optional[requests.Response]:
+            """带短暂等待的重试 GET"""
+            for attempt in range(max_retries):
+                try:
+                    resp = requests.get(url, params=params, timeout=timeout,
+                                        headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"})
+                    if resp.status_code == 200:
+                        return resp
+                except Exception:
+                    if attempt < max_retries - 1:
+                        time.sleep(0.3)
+            return None
+
         try:
             secid = DataFetcher._hk_secid(ticker)
 
             # ── 实时报价 ──
-            resp = requests.get(
+            resp = _retry_get(
                 EASTMONEY_QUOTE_URL,
                 params={
                     "secid": secid,
@@ -450,9 +464,8 @@ class DataFetcher:
                     "fltt": "2",
                 },
                 timeout=10,
-                headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
             )
-            if resp.status_code != 200:
+            if not resp or resp.status_code != 200:
                 return None
             data = resp.json().get("data")
             if not data:
@@ -474,7 +487,7 @@ class DataFetcher:
             week52_low_date = None
 
             try:
-                kresp = requests.get(
+                kresp = _retry_get(
                     EASTMONEY_KLINE_URL,
                     params={
                         "secid": secid,
@@ -486,9 +499,8 @@ class DataFetcher:
                         "lmt": "260",
                     },
                     timeout=15,
-                    headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
                 )
-                if kresp.status_code == 200:
+                if kresp and kresp.status_code == 200:
                     kdata = kresp.json().get("data")
                     if kdata and kdata.get("klines"):
                         # 格式: date,open,close,high,low,volume,amount,amplitude,chg%,chg,turnover%
