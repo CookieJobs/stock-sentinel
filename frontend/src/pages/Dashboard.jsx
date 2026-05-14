@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 
-const API_BASE = 'http://127.0.0.1:8000/api'
+const API_BASE = '/api'
 
 function getCurrency(market) {
   if (market === 'CN') return '¥'
@@ -63,6 +63,12 @@ export default function Dashboard() {
   const [newThreshold, setNewThreshold] = useState('-15')
   const [addLoading, setAddLoading] = useState(false)
   const [addError, setAddError] = useState('')
+
+  // Edit stock modal
+  const [editingStock, setEditingStock] = useState(null)
+  const [editThreshold, setEditThreshold] = useState('')
+  const [editLoading, setEditLoading] = useState(false)
+  const [editError, setEditError] = useState('')
 
   // Delete confirmation
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
@@ -206,6 +212,32 @@ export default function Dashboard() {
     }
   }
 
+  const handleEditStock = async (e) => {
+    e.preventDefault()
+    setEditError('')
+    setEditLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/stocks/${editingStock.ticker}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          threshold: parseFloat(editThreshold) || -15,
+        }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.detail || '更新失败')
+      }
+      setEditingStock(null)
+      setEditThreshold('')
+      await fetchData()
+    } catch (err) {
+      setEditError(err.message)
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
   const handleDeleteStock = async () => {
     if (!showDeleteConfirm) return
     setDeletingStock(true)
@@ -272,7 +304,8 @@ export default function Dashboard() {
 
     const overThreshold = stocks.filter((s) => {
       if (s.drawdown == null || s.threshold == null) return false
-      return s.drawdown >= Math.abs(s.threshold)
+      if (s.threshold >= 0) return false
+      return Math.abs(s.drawdown) >= Math.abs(s.threshold)
     }).length
 
     let maxStock = null
@@ -286,6 +319,33 @@ export default function Dashboard() {
 
     return { total, usCount, cnCount, hkCount, avgDrawdown, overThreshold, maxStock, maxDrawdown }
   }, [stocks])
+
+  const handleExportCSV = () => {
+    const headers = ['代码', '名称', '市场', '板块', '现价', '涨跌%', '52W高', '52W高日期', '回撤%', '阈值%', 'P/E', '距低%']
+    const rows = sortedStocks.map((s) => [
+      s.ticker,
+      s.name || '',
+      s.market || '',
+      s.sector || '',
+      s.current_price != null ? Number(s.current_price).toFixed(2) : '',
+      s.change_pct != null ? Number(s.change_pct).toFixed(2) : '',
+      s.week52_high != null ? Number(s.week52_high).toFixed(2) : '',
+      s.week52_high_date || '',
+      s.drawdown != null ? Number(s.drawdown).toFixed(2) : '',
+      s.threshold != null ? Math.abs(s.threshold).toFixed(2) : '',
+      s.pe_ratio != null ? Number(s.pe_ratio).toFixed(1) : '',
+      s.distance_low_pct != null ? Number(s.distance_low_pct).toFixed(1) : '',
+    ])
+    const csvContent = [headers, ...rows].map((r) => r.map((c) => `"${c}"`).join(',')).join('\n')
+    const bom = '﻿'
+    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `stock-sentinel-export-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
 
   if (loading) {
     return (
@@ -400,6 +460,13 @@ export default function Dashboard() {
               )}
             </button>
             <button
+              onClick={handleExportCSV}
+              disabled={stocks.length === 0}
+              className="px-3 py-1.5 text-xs bg-sent-border/50 text-sent-dim rounded-lg hover:text-white hover:bg-sent-border transition-colors disabled:opacity-50"
+            >
+              📥 导出 CSV
+            </button>
+            <button
               onClick={handleRefresh}
               disabled={refreshing}
               className="px-3 py-1.5 text-xs bg-sent-border/50 text-sent-dim rounded-lg hover:text-white hover:bg-sent-border transition-colors disabled:opacity-50"
@@ -469,7 +536,7 @@ export default function Dashboard() {
                 <th className="px-3 py-2.5 text-left cursor-pointer hover:text-white" onClick={() => handleSort('name')}>名称 <SortIcon column="name" sortConfig={sortConfig} /></th>
                 <th className="px-3 py-2.5 text-left whitespace-nowrap">市场</th>
                 <th className="px-3 py-2.5 text-left whitespace-nowrap">板块</th>
-                <th className="px-3 py-2.5 text-right cursor-pointer hover:text-white" onClick={() => handleSort('price')}>现价 <SortIcon column="price" sortConfig={sortConfig} /></th>
+                <th className="px-3 py-2.5 text-right cursor-pointer hover:text-white" onClick={() => handleSort('current_price')}>现价 <SortIcon column="current_price" sortConfig={sortConfig} /></th>
                 <th className="px-3 py-2.5 text-right cursor-pointer hover:text-white" onClick={() => handleSort('change_pct')}>涨跌 <SortIcon column="change_pct" sortConfig={sortConfig} /></th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap">52W高</th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap">52W高日期</th>
@@ -557,6 +624,17 @@ export default function Dashboard() {
                         title="刷新"
                       >
                         {refreshingStock === stock.ticker ? '⏳' : '🔄'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingStock(stock)
+                          setEditThreshold(String(Math.abs(stock.threshold) || 15))
+                          setEditError('')
+                        }}
+                        className="text-sent-dim hover:text-sent-yellow transition-colors p-1"
+                        title="编辑阈值"
+                      >
+                        ✎
                       </button>
                       <button
                         onClick={() => setShowDeleteConfirm(stock)}
@@ -758,6 +836,55 @@ export default function Dashboard() {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Threshold Modal */}
+      {editingStock && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setEditingStock(null)} />
+          <div className="relative bg-sent-card border border-sent-border rounded-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">编辑阈值 - {editingStock.ticker}</h3>
+            <form onSubmit={handleEditStock} className="space-y-4">
+              <div className="flex items-center gap-3 text-sm text-sent-dim mb-2">
+                <span>{editingStock.name || editingStock.ticker}</span>
+                <span>现价: {editingStock.current_price != null ? getCurrency(editingStock.market) + Number(editingStock.current_price).toFixed(2) : '--'}</span>
+                <span>当前回撤: <span className={getDrawdownClass(editingStock.drawdown)}>{editingStock.drawdown != null ? Number(editingStock.drawdown).toFixed(2) + '%' : '--'}</span></span>
+              </div>
+              <div>
+                <label className="block text-xs text-sent-dim mb-1">回撤阈值 (%)</label>
+                <input
+                  type="number"
+                  value={editThreshold}
+                  onChange={(e) => setEditThreshold(e.target.value)}
+                  className="w-full bg-sent-bg border border-sent-border rounded-lg px-3 py-2 text-sm text-white placeholder-sent-dim focus:outline-none focus:border-sent-blue"
+                  step="0.5"
+                  min="0"
+                  autoFocus
+                />
+                <p className="text-xs text-sent-dim mt-1">当前回撤超过此值时触发告警</p>
+              </div>
+              {editError && (
+                <div className="text-xs text-sent-red bg-sent-red/10 px-3 py-2 rounded-lg">{editError}</div>
+              )}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="flex-1 px-4 py-2 bg-sent-blue text-white rounded-lg hover:bg-sent-blue/80 transition-colors disabled:opacity-50 text-sm"
+                >
+                  {editLoading ? '保存中...' : '保存'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingStock(null)}
+                  className="px-4 py-2 border border-sent-border text-sent-dim rounded-lg hover:text-white hover:border-sent-dim transition-colors text-sm"
+                >
+                  取消
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

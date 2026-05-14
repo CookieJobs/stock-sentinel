@@ -1,7 +1,9 @@
 """股票数据获取封装 - Finnhub API (美股) + 东方财富 (A股/港股)"""
 import os
 import json
+import hashlib
 import logging
+import random
 import time
 import requests
 from typing import Optional, Dict, Any
@@ -163,16 +165,21 @@ class DataFetcher:
         # ── 回退: 演示数据 ──
         if not result and clean in DEMO_DATA:
             demo = dict(DEMO_DATA[clean])
+            base_price = demo.get("current_price", 0)
+            dynamic_price = DataFetcher._dynamic_demo_price(clean, base_price)
+            dynamic_change = round((dynamic_price - base_price) / base_price * 100, 2)
+
             demo["ticker"] = clean
             demo["market"] = demo.get("market", market)
             demo["source"] = "demo"
-            demo["change_pct"] = demo.get("change_pct", 0.0)
+            demo["current_price"] = dynamic_price
+            demo["change_pct"] = dynamic_change
             demo["week52_high_date"] = demo.get("week52_high_date", "-")
             demo["week52_low_date"] = demo.get("week52_low_date", "-")
             demo["drawdown"] = DataFetcher.calculate_drawdown(
-                demo.get("current_price", 0), demo.get("week52_high", 0))
+                dynamic_price, demo.get("week52_high", 0))
             demo["distance_low_pct"] = DataFetcher._calc_distance_low(
-                demo.get("current_price", 0), demo.get("week52_low", 0))
+                dynamic_price, demo.get("week52_low", 0))
             demo["last_updated"] = datetime.now().isoformat()
             if "sector" not in demo:
                 demo["sector"] = _SECTOR_MAP.get(clean)
@@ -560,6 +567,21 @@ class DataFetcher:
             return None
 
     # ── 工具方法 ──────────────────────────────────────────────
+
+    @staticmethod
+    def _dynamic_demo_price(ticker: str, base_price: float) -> float:
+        """根据 ticker + 当前分钟生成动态价格（随机游走）。
+
+        使用 ticker + 年月日时分 做种子，保证同 ticker 同分钟内一致，
+        跨分钟变化幅度不超过 base 的 ±3%。
+        """
+        now = datetime.now()
+        seed_str = f"{ticker}-{now.year}-{now.month}-{now.day}-{now.hour}-{now.minute}"
+        seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16) % (2 ** 31)
+        rng = random.Random(seed)
+        # 随机游走：基础价 × [0.97, 1.03]
+        jitter = rng.uniform(-0.03, 0.03)
+        return round(base_price * (1 + jitter), 2)
 
     @staticmethod
     def calculate_drawdown(current_price: Optional[float], week52_high: Optional[float]) -> Optional[float]:

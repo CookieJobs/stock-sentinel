@@ -1,10 +1,13 @@
-"""股票告警核心 — 站内通知"""
+"""股票告警核心 — 站内通知 + Webhook 推送"""
 import os
+import json
 import sqlite3
 import threading
 import logging
 from datetime import datetime
 from typing import Optional
+
+import requests
 
 from models import StockResponse
 
@@ -166,6 +169,7 @@ class StockAlerter:
         self._thread: Optional[threading.Thread] = None
         self._interval = int(os.environ.get("ALERT_CHECK_INTERVAL", 300))
         self._enabled = os.environ.get("ALERT_ENABLED", "true").lower() == "true"
+        self._webhook_url = os.environ.get("ALERT_WEBHOOK_URL", "")
 
     def start(self):
         if not self._enabled:
@@ -201,8 +205,32 @@ class StockAlerter:
                 self.dedup.mark_alerted(stock.ticker)
                 alerted.append(stock.ticker)
                 logger.info("Alert triggered: %s (%s)", stock.ticker, stock.name)
+                self._send_webhook(stock)
         if alerted:
             logger.info("Alerted tickers: %s", alerted)
+
+    def _send_webhook(self, stock: StockResponse):
+        """向配置的 webhook URL 发送 Slack 兼容告警消息"""
+        if not self._webhook_url:
+            return
+        currency = {"CN": "¥", "HK": "HK$", "US": "$"}.get(stock.market, "$")
+        try:
+            payload = {
+                "text": (
+                    f"🚨 *StockSentinel 告警* — {stock.ticker} 回撤超限\n"
+                    f"股票：{stock.name} ({stock.ticker})\n"
+                    f"市场：{stock.market}\n"
+                    f"当前回撤：{stock.drawdown:.2f}%\n"
+                    f"阈值：{abs(stock.threshold):.2f}%\n"
+                    f"现价：{currency}{stock.current_price:.2f}\n"
+                    f"52W高：{currency}{stock.week52_high:.2f} ({stock.week52_high_date})"
+                )
+            }
+            resp = requests.post(self._webhook_url, json=payload, timeout=10)
+            if resp.status_code >= 400:
+                logger.warning("Webhook failed for %s: HTTP %s", stock.ticker, resp.status_code)
+        except Exception:
+            logger.exception("Webhook send error for %s", stock.ticker)
 
     def trigger_check(self):
         """手动触发一次检查"""

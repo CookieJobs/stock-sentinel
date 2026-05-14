@@ -72,17 +72,17 @@ if all_ok:
 c = Counter(d['market'] for d in DEMO_DATA.values())
 print(f'Market distribution: {dict(c)}')
 
-# Check a few specific values
+# Check a few specific values (prices now dynamic within ±3%)
 aapl = DataFetcher.get_stock_info('AAPL')
-assert aapl['current_price'] == 273.17
+assert 264 < aapl['current_price'] < 282, f'AAPL price out of range: {aapl["current_price"]}'
 assert aapl['sector'] == 'Technology'
 
 moutai = DataFetcher.get_stock_info('600519')
-assert moutai['current_price'] == 1371.72
+assert 1330 < moutai['current_price'] < 1413, f'Moutai price out of range: {moutai["current_price"]}'
 assert moutai['sector'] == '白酒'
 
 tencent = DataFetcher.get_stock_info('00700')
-assert tencent['current_price'] == 485.00
+assert 470 < tencent['current_price'] < 500, f'Tencent price out of range: {tencent["current_price"]}'
 assert tencent['sector'] == '互联网'
 
 print('Specific value checks: PASS')
