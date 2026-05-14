@@ -133,12 +133,9 @@ class DataFetcher:
                 result["market"] = "US"
                 result["source"] = "finnhub"
                 source = "finnhub"
-                # 尝试获取行业
-                sector = _SECTOR_MAP.get(clean)
-                if not sector:
-                    sector = DataFetcher._get_finnhub_sector(clean, api_key)
-                if sector:
-                    result["sector"] = sector
+                # sector 优先用 API 返回的 finnhubIndustry，否则用静态映射兜底
+                if not result.get("sector"):
+                    result["sector"] = _SECTOR_MAP.get(clean)
 
         # ── A 股 ──
         elif market == "CN":
@@ -194,12 +191,12 @@ class DataFetcher:
 
     @staticmethod
     def _get_finnhub_quote(ticker: str, api_key: str) -> Optional[Dict[str, Any]]:
-        """从 Finnhub 获取美股行情 + 52 周高低点。
+        """从 Finnhub 获取美股行情 — 3 次 API 调用覆盖全部字段。
 
         接口:
-          /quote              → 当前价 (c), 涨跌幅 (dp)
-          /stock/metric?metric=price → 52WeekHigh, 52WeekLow 及对应日期
-          /stock/profile2     → 公司名称
+          /quote              → 当前价 (c), 涨跌幅 (dp), 前收盘 (pc), 时间戳 (t)
+          /stock/metric?metric=all → 52周高低点 + PE (单次调用取全部)
+          /stock/profile2     → 公司名称 + 行业分类
         """
         try:
             # 1. 实时报价
@@ -217,15 +214,16 @@ class DataFetcher:
                 return None
             change_pct = q.get("dp")
 
-            # 2. 52 周高低点
+            # 2. 全部指标（52周高低点 + PE，一次调用替代原来的两次 metric 请求）
             week52_high = None
             week52_low = None
             week52_high_date = None
             week52_low_date = None
+            pe_ratio = None
             try:
                 resp2 = requests.get(
                     f"{FINNHUB_BASE_URL}/stock/metric",
-                    params={"symbol": ticker, "metric": "price", "token": api_key},
+                    params={"symbol": ticker, "metric": "all", "token": api_key},
                     timeout=10,
                 )
                 if resp2.status_code == 200:
@@ -234,12 +232,13 @@ class DataFetcher:
                     week52_low = m.get("52WeekLow")
                     week52_high_date = m.get("52WeekHighDate")
                     week52_low_date = m.get("52WeekLowDate")
+                    pe_ratio = m.get("peBasicExclExtraTTM") or m.get("peTTM")
             except Exception:
                 logger.debug("Finnhub /stock/metric failed for %s", ticker, exc_info=True)
 
-            # 3. 公司名称
+            # 3. 公司名称 + 行业（一次 profile2 调用同时获取）
             name = ticker
-            pe_ratio = None
+            sector = None
             try:
                 resp3 = requests.get(
                     f"{FINNHUB_BASE_URL}/stock/profile2",
@@ -249,29 +248,15 @@ class DataFetcher:
                 if resp3.status_code == 200:
                     p = resp3.json()
                     name = p.get("name") or ticker
+                    sector = p.get("finnhubIndustry")
             except Exception:
                 logger.debug("Finnhub /stock/profile2 failed for %s", ticker, exc_info=True)
-
-            # 4. PE 尝试
-            try:
-                resp4 = requests.get(
-                    f"{FINNHUB_BASE_URL}/stock/metric",
-                    params={"symbol": ticker, "metric": "all", "token": api_key},
-                    timeout=10,
-                )
-                if resp4.status_code == 200:
-                    m_all = resp4.json().get("metric", {}) or {}
-                    pe_ratio = m_all.get("peBasicExclExtraTTM") or m_all.get("peTTM")
-            except Exception:
-                logger.debug("Finnhub PE fetch failed for %s", ticker, exc_info=True)
 
             # 组装
             distance_low_pct = DataFetcher._calc_distance_low(current, week52_low)
             drawdown = DataFetcher.calculate_drawdown(current, week52_high)
             now = datetime.now()
 
-            # 判断是否在盘后时段（美股，北京时间 04:00-20:00）
-            # t 是 Unix 时间戳（秒），转为北京时间 UTC+8
             ts_local = q.get("t", 0)
             ah_change_pct, ah_change_label = DataFetcher._calc_ah_change(current, q.get("pc"), ts_local)
 
@@ -291,27 +276,13 @@ class DataFetcher:
                 "drawdown": drawdown,
                 "distance_low_pct": distance_low_pct,
                 "pe_ratio": pe_ratio,
+                "sector": sector,
                 "market_status": DataFetcher.get_market_status(drawdown),
                 "last_updated": now.isoformat(),
             }
         except Exception:
             logger.warning("Finnhub quote exception for %s", ticker, exc_info=True)
             return None
-
-    @staticmethod
-    def _get_finnhub_sector(ticker: str, api_key: str) -> Optional[str]:
-        """从 Finnhub profile2 获取行业分类。"""
-        try:
-            resp = requests.get(
-                f"{FINNHUB_BASE_URL}/stock/profile2",
-                params={"symbol": ticker, "token": api_key},
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                return resp.json().get("finnhubIndustry")
-        except Exception:
-            logger.debug("Finnhub sector fetch failed for %s", ticker, exc_info=True)
-        return None
 
     # ── 东方财富 A 股 ─────────────────────────────────────────
 
@@ -624,35 +595,33 @@ class DataFetcher:
     def _calc_ah_change(current: Optional[float], prev_close: Optional[float], ts_unix: int) -> tuple:
         """计算美股盘后/夜盘涨跌幅。
 
-        美股时间（北京时间 UTC+8）：
-          - 盘后：04:00 - 09:30（当日盘前开始前）
-          - 夜盘：21:30（次日盘中开始前）- 04:00
-        盘中时段（09:30-16:00 北京时间）无盘后涨跌，显示总涨跌幅 change_pct。
+        美股常规交易 = 美东 9:30-16:00，对应北京时间:
+          - EDT (UTC-4, 3月-11月): 21:30 - 04:00 (次日)
+          - EST (UTC-5, 11月-3月): 22:30 - 05:00 (次日)
+        近似判断: 北京时间 hour >= 21 或 hour < 5 为盘中，其余为盘后。
 
         Returns: (ah_change_pct, ah_change_label)
         """
         if current is None or prev_close is None or prev_close == 0 or ts_unix == 0:
             return None, None
 
-        # Unix 时间戳转北京时间（UTC+8）
-        # UTC 时间 = ts_unix + 8*3600
         from datetime import timezone, timedelta
         beijing_tz = timezone(timedelta(hours=8))
-        dt_utc8 = datetime.fromtimestamp(ts_unix, tz=beijing_tz)
-        hour = dt_utc8.hour
+        dt_bj = datetime.fromtimestamp(ts_unix, tz=beijing_tz)
+        hour = dt_bj.hour
+        weekday = dt_bj.weekday()
 
-        # 盘中：09:30 - 16:00（北京夏令时，对应美东 21:30-04:00）
-        # 非盘中时段视为盘后/夜盘
-        if 9 <= hour < 16:
+        # 周末不交易
+        # 盘中时段（北京时间夜晚/凌晨）: hour >= 21 或 hour < 5
+        if weekday < 5 and (hour >= 21 or hour < 5):
             return None, None
 
         # 盘后/夜盘：计算相对上一交易日收盘的涨跌幅
         ah_change_pct = round((current - prev_close) / prev_close * 100, 3)
 
-        if 16 <= hour < 21:
-            label = "盘后"
-        elif 0 <= hour < 9:
-            label = "夜盘"
+        # 北京时间 5:00-9:00 对应美股盘前（美东夏令时 17:00-21:00 / 冬令时 18:00-22:00）
+        if 5 <= hour < 9:
+            label = "盘前"
         else:
             label = "盘后"
 
