@@ -44,31 +44,15 @@ class StockMonitor:
 
     def _auto_refresh_loop(self):
         try:
-            now = datetime.now(timezone(timedelta(hours=8)))
-            hour = now.hour
-
-            # 判断是否在盘中时段（09:30-16:00 北京时间），跳过美股刷新
-            us_skip = 9 <= hour < 16
-
             db = get_db()
             try:
                 rows = db.execute("SELECT ticker, market FROM stocks").fetchall()
             finally:
                 db.close()
 
-            us_tickers = [r["ticker"] for r in rows if r["market"] == "US"]
-            other_tickers = [r["ticker"] for r in rows if r["market"] != "US"]
+            all_tickers = [r["ticker"] for r in rows]
 
-            # 非盘中时段，刷新美股
-            if not us_skip:
-                for ticker in us_tickers:
-                    if self._stop_auto_refresh.is_set():
-                        return
-                    self._fetch_one_stock(ticker)
-                    time.sleep(0.3)  # 避免 API 限流
-
-            # A股/港股始终 30s 刷新
-            for ticker in other_tickers:
+            for ticker in all_tickers:
                 if self._stop_auto_refresh.is_set():
                     return
                 self._fetch_one_stock(ticker)
@@ -358,9 +342,18 @@ class StockMonitor:
                 self._refresh_tasks[task_id]["error"] = str(e)
 
     def refresh_one(self, ticker: str) -> Optional[StockResponse]:
-        """刷新单只股票"""
+        """刷新单只股票，返回更新后的数据；失败返回 None"""
         ticker = ticker.strip().upper()
         data = self._fetch_one_stock(ticker)
         if data:
             return self.get_stock_by_ticker(ticker)
         return None
+
+    def refresh_one_with_status(self, ticker: str) -> dict:
+        """刷新单只股票，返回 {success, stock, error} 供前端展示"""
+        ticker = ticker.strip().upper()
+        data = self._fetch_one_stock(ticker)
+        if data:
+            stock = self.get_stock_by_ticker(ticker)
+            return {"success": True, "stock": stock, "error": None}
+        return {"success": False, "stock": None, "error": "数据获取失败，请检查网络或 API Key"}

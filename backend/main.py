@@ -104,13 +104,13 @@ def refresh_progress(task_id: str):
     return progress
 
 
-@app.get("/api/stocks/{ticker}/refresh", response_model=StockResponse)
+@app.get("/api/stocks/{ticker}/refresh")
 def refresh_one(ticker: str):
-    """刷新单只股票"""
-    stock = monitor.refresh_one(ticker)
-    if not stock:
-        raise HTTPException(status_code=404, detail="股票未找到")
-    return stock
+    """刷新单只股票，返回成功/失败状态"""
+    result = monitor.refresh_one_with_status(ticker)
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=502, detail=result["error"])
 
 
 @app.get("/api/auto_refresh/status")

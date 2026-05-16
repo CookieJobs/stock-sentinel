@@ -49,6 +49,14 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState(null)
   const [refreshingStock, setRefreshingStock] = useState(null)
 
+  // Toast 通知
+  const [toast, setToast] = useState(null) // { type: 'success'|'error', message: string }
+
+  const showToast = (type, message) => {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 3000)
+  }
+
   // Alert panel
   const [alertCount, setAlertCount] = useState(0)
   const [alerts, setAlerts] = useState([])
@@ -202,11 +210,15 @@ export default function Dashboard() {
     setRefreshingStock(ticker)
     try {
       const res = await fetch(`${API_BASE}/stocks/${ticker}/refresh`)
-      if (res.ok) {
+      const data = await res.json()
+      if (res.ok && data.success) {
         await fetchData()
+        showToast('success', `${ticker} 刷新成功`)
+      } else {
+        showToast('error', `${ticker} ${data.detail || '刷新失败'}`)
       }
-    } catch (err) {
-      console.error('Refresh stock error:', err)
+    } catch {
+      showToast('error', `${ticker} 网络错误，请重试`)
     } finally {
       setRefreshingStock(null)
     }
@@ -357,6 +369,20 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-4">
+      {/* Toast 通知 */}
+      {toast && (
+        <div
+          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all duration-300 ${
+            toast.type === 'success'
+              ? 'bg-green-600 text-white'
+              : 'bg-red-600 text-white'
+          }`}
+          style={{ animation: 'slideIn 0.3s ease' }}
+        >
+          {toast.type === 'success' ? '✅' : '❌'} {toast.message}
+        </div>
+      )}
+
       {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-sent-card border border-sent-border rounded-lg p-4">
