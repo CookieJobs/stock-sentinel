@@ -302,6 +302,7 @@ class StockMonitor:
                 "total": len(tickers),
                 "done": 0,
                 "current": "",
+                "current_name": "",
                 "status": "running",
                 "error": None,
                 "last_stock": None,
@@ -328,8 +329,10 @@ class StockMonitor:
         """后台线程：逐只刷新，每刷完一只将数据写入进度供前端实时更新"""
         try:
             for i, ticker in enumerate(tickers):
+                current_stock = self.get_stock_by_ticker(ticker)
                 with self._lock:
                     self._refresh_tasks[task_id]["current"] = ticker
+                    self._refresh_tasks[task_id]["current_name"] = current_stock.name if current_stock else ticker
 
                 result = self._fetch_one_stock(ticker)
                 stock = self.get_stock_by_ticker(ticker)

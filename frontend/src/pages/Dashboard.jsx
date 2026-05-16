@@ -54,7 +54,7 @@ export default function Dashboard() {
 
   const showToast = (type, message) => {
     setToast({ type, message })
-    setTimeout(() => setToast(null), 3000)
+    setTimeout(() => setToast(null), 5000)
   }
 
   // Alert panel
@@ -171,9 +171,9 @@ export default function Dashboard() {
             return [...prev, s]
           })
           if (progress.last_status === 'ok') {
-            showToast('success', `${s.ticker} 刷新成功`)
+            showToast('success', `${s.name || s.ticker} 刷新成功`)
           } else {
-            showToast('error', `${progress.current} 刷新失败`)
+            showToast('error', `${progress.current_name || progress.current} 刷新失败`)
           }
         }
 
@@ -229,8 +229,9 @@ export default function Dashboard() {
     }
   }
 
-  const handleRefreshStock = async (ticker) => {
+  const handleRefreshStock = async (ticker, stockName) => {
     setRefreshingStock(ticker)
+    const label = stockName || ticker
     try {
       const res = await fetch(`${API_BASE}/stocks/${ticker}/refresh`)
       const data = await res.json()
@@ -245,12 +246,12 @@ export default function Dashboard() {
           }
           return prev
         })
-        showToast('success', `${ticker} 刷新成功`)
+        showToast('success', `${data.stock?.name || label} 刷新成功`)
       } else {
-        showToast('error', `${ticker} ${data.detail || '刷新失败'}`)
+        showToast('error', `${label} ${data.detail || '刷新失败'}`)
       }
     } catch {
-      showToast('error', `${ticker} 网络错误，请重试`)
+      showToast('error', `${label} 网络错误，请重试`)
     } finally {
       setRefreshingStock(null)
     }
@@ -547,7 +548,7 @@ export default function Dashboard() {
                         ? '✅ 刷新完成'
                         : refreshProgress.status === 'error'
                           ? '❌ 刷新出错'
-                          : `🔄 正在刷新 ${refreshProgress.current || ''}`}
+                          : `🔄 正在刷新 ${refreshProgress.current_name || refreshProgress.current || ''}`}
                   </span>
                   <span className="text-sent-blue font-mono">
                     {refreshProgress.done}/{refreshProgress.total}
@@ -676,7 +677,7 @@ export default function Dashboard() {
                     </td>
                     <td className="px-3 py-2.5 text-center whitespace-nowrap">
                       <button
-                        onClick={() => handleRefreshStock(stock.ticker)}
+                        onClick={() => handleRefreshStock(stock.ticker, stock.name)}
                         disabled={refreshingStock === stock.ticker}
                         className="text-sent-dim hover:text-sent-blue transition-colors p-1 disabled:opacity-50"
                         title="刷新"
