@@ -123,8 +123,22 @@ def auto_refresh_status():
 
 
 # Serve frontend static files
+_DEV_MODE = os.environ.get("DEV_MODE", "").lower() == "true"
 static_dir = Path(__file__).parent / "static"
-if static_dir.exists():
+
+if _DEV_MODE:
+    from starlette.responses import RedirectResponse
+
+    @app.get("/{full_path:path}")
+    async def redirect_to_dev(full_path: str):
+        """Dev mode: redirect non-API visits to Vite dev server"""
+        return RedirectResponse(url="http://localhost:5173")
+
+    # Also mount assets from build if available
+    if (static_dir / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+
+elif static_dir.exists():
     app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
 
     @app.get("/{full_path:path}")

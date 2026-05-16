@@ -9,15 +9,18 @@ StockSentinel is a stock monitoring and alerting system tracking drawdown from 5
 ## Commands
 
 ```bash
-# Backend (Python)
-python backend/main.py                  # Start API server on :8000
-python backend/test_data_fetcher.py     # Run data fetcher smoke tests
-python migrate_sector.py                # One-off DB migration script
+# 一键启动（推荐）
+./start.sh                                # 同时启动前后端 → 访问 http://localhost:5173
 
-# Frontend (React + Vite)
-cd frontend && npm run dev              # Dev server on :5173, proxies /api → :8000
-cd frontend && npm run build            # Builds into backend/static/ for serving
-cd frontend && npm run lint             # ESLint
+# 或分别启动
+python backend/main.py                    # Start API server on :8000
+cd frontend && npm run dev                # Dev server on :5173, proxies /api → :8000
+cd frontend && npm run build              # Builds into backend/static/ for serving
+cd frontend && npm run lint               # ESLint
+python backend/test_data_fetcher.py       # Run data fetcher smoke tests
+
+# 开发时只访问 http://localhost:5173
+# :8000 会重定向到 :5173（DEV_MODE=true），:5173 的 /api 代理到 :8000
 ```
 
 ## Architecture
