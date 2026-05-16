@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 
 const API_BASE = '/api'
 
@@ -49,12 +49,19 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState(null)
   const [refreshingStock, setRefreshingStock] = useState(null)
 
-  // Toast 通知
-  const [toast, setToast] = useState(null) // { type: 'success'|'error', message: string }
+  // Toast 通知 — 队列堆叠，每条独立计时
+  const [toasts, setToasts] = useState([]) // [{ id, type, message }]
+  const toastIdRef = useRef(0)
 
   const showToast = (type, message) => {
-    setToast({ type, message })
-    setTimeout(() => setToast(null), 5000)
+    const id = ++toastIdRef.current
+    setToasts((prev) => {
+      const next = [...prev, { id, type, message }]
+      return next.length > 5 ? next.slice(-5) : next
+    })
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, 5000)
   }
 
   // Alert panel
@@ -402,17 +409,22 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-4">
-      {/* Toast 通知 */}
-      {toast && (
-        <div
-          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all duration-300 ${
-            toast.type === 'success'
-              ? 'bg-green-600 text-white'
-              : 'bg-red-600 text-white'
-          }`}
-          style={{ animation: 'slideIn 0.3s ease' }}
-        >
-          {toast.type === 'success' ? '✅' : '❌'} {toast.message}
+      {/* Toast 通知 — 堆叠显示 */}
+      {toasts.length > 0 && (
+        <div className="fixed top-4 right-4 z-50 flex flex-col gap-2" style={{ maxWidth: 320 }}>
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className={`px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium ${
+                t.type === 'success'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-red-600 text-white'
+              }`}
+              style={{ animation: 'slideIn 0.3s ease' }}
+            >
+              {t.type === 'success' ? '✅' : '❌'} {t.message}
+            </div>
+          ))}
         </div>
       )}
 
