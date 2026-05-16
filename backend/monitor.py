@@ -304,6 +304,8 @@ class StockMonitor:
                 "current": "",
                 "status": "running",
                 "error": None,
+                "last_stock": None,
+                "last_status": None,
             }
 
         thread = threading.Thread(
@@ -323,16 +325,35 @@ class StockMonitor:
             return dict(task)
 
     def _refresh_all_bg(self, task_id: str, tickers: list):
-        """后台线程：逐只刷新并更新进度"""
+        """后台线程：逐只刷新，每刷完一只将数据写入进度供前端实时更新"""
         try:
             for i, ticker in enumerate(tickers):
                 with self._lock:
                     self._refresh_tasks[task_id]["current"] = ticker
 
-                self._fetch_one_stock(ticker)
+                result = self._fetch_one_stock(ticker)
+                stock = self.get_stock_by_ticker(ticker)
 
                 with self._lock:
                     self._refresh_tasks[task_id]["done"] = i + 1
+                    if stock:
+                        self._refresh_tasks[task_id]["last_stock"] = {
+                            "ticker": stock.ticker,
+                            "name": stock.name,
+                            "market": stock.market,
+                            "current_price": stock.current_price,
+                            "change_pct": stock.change_pct,
+                            "drawdown": stock.drawdown,
+                            "week52_high": stock.week52_high,
+                            "week52_low": stock.week52_low,
+                            "pe_ratio": stock.pe_ratio,
+                            "sector": stock.sector,
+                            "market_status": stock.market_status,
+                            "last_updated": stock.last_updated,
+                        }
+                        self._refresh_tasks[task_id]["last_status"] = "ok"
+                    else:
+                        self._refresh_tasks[task_id]["last_status"] = "fail"
 
             with self._lock:
                 self._refresh_tasks[task_id]["status"] = "completed"

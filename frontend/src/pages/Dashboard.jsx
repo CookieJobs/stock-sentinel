@@ -150,22 +150,45 @@ export default function Dashboard() {
         return res.json()
       }
 
+      let lastDone = 0
       let progress = null
       while (true) {
         progress = await poll()
         if (!progress) break
         setRefreshProgress(progress)
+
+        // 有新股票刷新完成 → 实时更新列表 + Toast
+        if (progress.done > lastDone && progress.last_stock) {
+          lastDone = progress.done
+          const s = progress.last_stock
+          setStocks((prev) => {
+            const idx = prev.findIndex((item) => item.ticker === s.ticker)
+            if (idx >= 0) {
+              const next = [...prev]
+              next[idx] = { ...next[idx], ...s }
+              return next
+            }
+            return [...prev, s]
+          })
+          if (progress.last_status === 'ok') {
+            showToast('success', `${s.ticker} 刷新成功`)
+          } else {
+            showToast('error', `${progress.current} 刷新失败`)
+          }
+        }
+
         if (progress.status === 'completed' || progress.status === 'error') break
-        await new Promise((r) => setTimeout(r, 400))
+        await new Promise((r) => setTimeout(r, 300))
       }
 
+      // 最终兜底一次全量同步
       if (progress?.status === 'completed') {
         await fetchData()
       } else if (progress?.status === 'error') {
-        console.error('Refresh error:', progress.error)
+        showToast('error', `刷新异常: ${progress.error || '未知错误'}`)
       }
-    } catch (err) {
-      console.error('Refresh error:', err)
+    } catch {
+      showToast('error', '启动刷新失败，请检查后端服务')
     } finally {
       setRefreshing(false)
       setTimeout(() => setRefreshProgress(null), 1200)
@@ -212,7 +235,16 @@ export default function Dashboard() {
       const res = await fetch(`${API_BASE}/stocks/${ticker}/refresh`)
       const data = await res.json()
       if (res.ok && data.success) {
-        await fetchData()
+        // 直接更新单只股票，不等全量刷新
+        setStocks((prev) => {
+          const idx = prev.findIndex((item) => item.ticker === ticker)
+          if (idx >= 0) {
+            const next = [...prev]
+            next[idx] = { ...next[idx], ...data.stock }
+            return next
+          }
+          return prev
+        })
         showToast('success', `${ticker} 刷新成功`)
       } else {
         showToast('error', `${ticker} ${data.detail || '刷新失败'}`)
