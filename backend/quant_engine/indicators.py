@@ -48,11 +48,57 @@ def BBI(close: pd.Series) -> pd.Series:
 
 
 def SAR(high: pd.Series, low: pd.Series, step: float = 0.02, max_step: float = 0.2) -> pd.Series:
-    """抛物线 SAR（简化版）
+    """抛物线 SAR（Wilder 完整算法）
 
-    MVP 暂用 Wilder 简化算法；后续可换成完整版。
+    上升趋势：SAR 位于价格下方，作支撑
+    下降趋势：SAR 位于价格上方，作压力
+    反转：SAR 穿越价格 → 趋势翻转
     """
-    raise NotImplementedError("SAR 暂未实现，M2 补")
+    n = len(high)
+    if n < 2:
+        return pd.Series([np.nan] * n, index=high.index)
+
+    h = high.values
+    l = low.values
+    sar = np.full(n, np.nan)
+
+    is_long = True           # 假设起始为上升
+    af = step                 # 加速因子
+    ep = h[0]                 # 极值点
+    sar[0] = l[0]
+
+    for i in range(1, n):
+        prev_sar = sar[i-1]
+        if np.isnan(prev_sar):
+            sar[i] = l[i] if is_long else h[i]
+            continue
+
+        if is_long:
+            sar[i] = prev_sar + af * (ep - prev_sar)
+            # 反转：价格跌破 SAR
+            if l[i] < sar[i]:
+                is_long = False
+                sar[i] = ep          # 反转时 SAR 设到极值
+                ep = l[i]
+                af = step
+            else:
+                if h[i] > ep:
+                    ep = h[i]
+                    af = min(af + step, max_step)
+        else:
+            sar[i] = prev_sar + af * (ep - prev_sar)
+            # 反转：价格涨破 SAR
+            if h[i] > sar[i]:
+                is_long = True
+                sar[i] = ep
+                ep = h[i]
+                af = step
+            else:
+                if l[i] < ep:
+                    ep = l[i]
+                    af = min(af + step, max_step)
+
+    return pd.Series(sar, index=high.index)
 
 
 # ── 震荡类 ──────────────────────────────────────────────────────
@@ -142,14 +188,23 @@ INDICATORS = {
     "ATR":  {"fn": ATR,  "params": {"period": 14},  "inputs": ["high", "low", "close"]},
     "OBV":  {"fn": OBV,  "params": {},              "inputs": ["close", "volume"]},
     "VOL_MA": {"fn": VOL_MA, "params": {"period": 5}, "inputs": ["volume"]},
-    # SAR 待实现
+    "SAR":   {"fn": SAR,   "params": {"step": 0.02, "max_step": 0.2}, "inputs": ["high", "low"]},
 }
+
+
+# 振荡器（在主图下方独立 pane 显示的指标）
+OSCILLATOR_INDICATORS = {"MACD", "RSI", "KDJ", "WR", "CCI", "ATR"}
 
 
 def list_indicators() -> list[dict]:
     """列出所有可用指标（前端展示用）"""
     return [
-        {"name": name, "params": meta["params"], "multi": meta.get("multi", False)}
+        {
+            "name": name,
+            "params": meta["params"],
+            "multi": meta.get("multi", False),
+            "oscillator": name in OSCILLATOR_INDICATORS,
+        }
         for name, meta in INDICATORS.items()
     ]
 

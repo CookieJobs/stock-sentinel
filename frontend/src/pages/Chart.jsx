@@ -36,6 +36,19 @@ const INDICATOR_PRESETS = [
     { name: 'EMA', params: { period: 12 }},
     { name: 'EMA', params: { period: 26 }},
   ]},
+  { name: 'SAR',  label: 'SAR(0.02,0.2)', specs: [
+    { name: 'SAR', params: { step: 0.02, max_step: 0.2 }},
+  ]},
+]
+
+const OSCILLATOR_OPTIONS = [
+  { value: null,  label: '无' },
+  { value: 'MACD', label: 'MACD (12,26,9)' },
+  { value: 'RSI',  label: 'RSI (14)' },
+  { value: 'KDJ',  label: 'KDJ (9,3,3)' },
+  { value: 'WR',   label: 'WR (14)' },
+  { value: 'CCI',  label: 'CCI (14)' },
+  { value: 'ATR',  label: 'ATR (14)' },
 ]
 
 function detectMarket(ticker) {
@@ -51,17 +64,24 @@ export default function Chart() {
   const [market, setMarket] = useState(detectMarket(ticker))
   const [adj] = useState('qfq')
   const [activeIndicators, setActiveIndicators] = useState(INDICATOR_PRESETS[0].specs)
+  const [oscillator, setOscillator] = useState('MACD')
   const [chartData, setChartData] = useState({ kline: [], indicators: {}, meta: null })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [inputTicker, setInputTicker] = useState(ticker)
 
-  // 加载 K 线 + 指标
+  // 加载 K 线 + 指标（含当前 oscillator）
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError('')
-    kline.withIndicators(ticker, { market, period, adj }, activeIndicators)
+    // 把 oscillator 也加入请求（如果选了）
+    const specs = [...activeIndicators]
+    if (oscillator) {
+      const oscSpecs = oscillatorToSpecs(oscillator)
+      specs.push(...oscSpecs)
+    }
+    kline.withIndicators(ticker, { market, period, adj }, specs)
       .then(data => {
         if (cancelled) return
         setChartData(data)
@@ -76,7 +96,7 @@ export default function Chart() {
         setLoading(false)
       })
     return () => { cancelled = true }
-  }, [ticker, market, period, adj, activeIndicators])
+  }, [ticker, market, period, adj, activeIndicators, oscillator])
 
   function handleTickerSubmit(e) {
     e.preventDefault()
@@ -128,7 +148,7 @@ export default function Chart() {
           </div>
         </div>
 
-        {/* 指标预设 */}
+        {/* 指标预设 + 振荡器选择 */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="text-xs text-sent-dim">叠加指标：</span>
           {INDICATOR_PRESETS.map(p => {
@@ -148,6 +168,24 @@ export default function Chart() {
           <span className="text-xs text-sent-dim ml-2">
             已选 {activeIndicators.length} 个
           </span>
+        </div>
+
+        {/* 振荡器（独立 pane） */}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-sent-dim">下方振荡器：</span>
+          {OSCILLATOR_OPTIONS.map(o => (
+            <button
+              key={o.value ?? 'none'}
+              onClick={() => setOscillator(o.value)}
+              className={`px-2 py-1 rounded text-xs ${
+                oscillator === o.value
+                  ? 'bg-sent-blue/20 text-sent-blue border border-sent-blue/40'
+                  : 'bg-sent-bg border border-sent-border text-sent-dim hover:text-white'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -172,10 +210,22 @@ export default function Chart() {
         <StockChart
           kline={chartData.kline}
           indicators={chartData.indicators}
+          oscillator={oscillator}
           loading={loading}
           height={520}
         />
       </div>
     </div>
   )
+}
+
+// 把 oscillator 名转成 indicators specs（用于 API 请求）
+function oscillatorToSpecs(osc) {
+  if (osc === 'MACD') return [{ name: 'MACD', params: {} }]
+  if (osc === 'RSI') return [{ name: 'RSI', params: { period: 14 } }]
+  if (osc === 'KDJ') return [{ name: 'KDJ', params: { n: 9, m1: 3, m2: 3 } }]
+  if (osc === 'WR') return [{ name: 'WR', params: { period: 14 } }]
+  if (osc === 'CCI') return [{ name: 'CCI', params: { period: 14 } }]
+  if (osc === 'ATR') return [{ name: 'ATR', params: { period: 14 } }]
+  return []
 }
