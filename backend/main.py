@@ -16,6 +16,8 @@ from database import init_db
 from models import StockResponse, AddStockRequest, UpdateStockRequest
 from monitor import StockMonitor
 from alerter import StockAlerter
+from quant_engine.db import init_quant_db
+from quant_engine.api import api_router
 
 monitor = StockMonitor()
 alerter = StockAlerter()
@@ -24,6 +26,7 @@ alerter = StockAlerter()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    init_quant_db()  # 量化引擎表
     monitor.start_auto_refresh()
     alerter.start()
     yield
@@ -31,7 +34,10 @@ async def lifespan(app: FastAPI):
     monitor.stop_auto_refresh()
 
 
-app = FastAPI(title="StockSentinel", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="StockSentinel", version="0.3.0-quant-mvp", lifespan=lifespan)
+
+# 量化引擎 API 路由（/api/quant/*）
+app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
