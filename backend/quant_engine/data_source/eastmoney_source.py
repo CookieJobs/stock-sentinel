@@ -95,12 +95,13 @@ class EastMoneySource(DataSourceBase):
     def _secid(ticker: str, market: str) -> str:
         clean = ticker.upper().replace(".HK", "")
         if market == "CN":
-            if clean[0] in ("6", "9"):
+            # 指数：000xxx 上证、399xxx 深证
+            if clean.startswith("000") or clean.startswith("60") or clean.startswith("9"):
                 return f"1.{clean}"
+            # 股票：00xxxx/30xxxx 深市
             return f"0.{clean}"
         if market == "HK":
             return f"116.{clean.zfill(5)}"
         if market == "US":
-            # 美股走 Finnhub，这里只是占位
             return f"105.{clean}"
         raise ValueError(f"Unsupported market: {market}")

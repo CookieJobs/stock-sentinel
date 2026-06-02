@@ -84,17 +84,37 @@ def signal_ma_cross(df: pd.DataFrame, params: dict) -> dict[str, float]:
 
 
 def signal_factor_rank(df: pd.DataFrame, params: dict) -> dict[str, float]:
-    """多因子排名：取因子值排名 Top N 等权"""
-    factor_col = params.get("factor", "momentum_20d")
+    """多因子排名：取因子值排名 Top N 等权
+
+    支持内置因子：
+    - momentum_Nd : N 日动量（基于 close.pct_change）
+    - volatility_Nd : N 日波动率
+    也支持外部因子列：df 中已包含的列名
+    """
+    factor = params.get("factor", "momentum_20d")
     top_n = params.get("top_n", 10)
-    if factor_col not in df.columns:
-        logger.warning("factor %s not in df", factor_col)
+
+    df = df.copy()
+    if factor.startswith("momentum_"):
+        n = int(factor.split("_")[1].rstrip("d"))
+        df["_factor"] = df.groupby("ticker")["close"].pct_change(n)
+    elif factor.startswith("volatility_"):
+        n = int(factor.split("_")[1].rstrip("d"))
+        log_ret = np.log(df["close"] / df["close"].shift(1))
+        df["_factor"] = df.groupby("ticker")["close"].transform(
+            lambda x: np.log(x / x.shift(1)).rolling(n).std()
+        )
+    elif factor in df.columns:
+        df["_factor"] = df[factor]
+    else:
+        logger.warning("factor %s not recognized", factor)
         return {}
+
     last_day = df["trade_date"].max()
-    snapshot = df[df["trade_date"] == last_day].dropna(subset=[factor_col])
+    snapshot = df[df["trade_date"] == last_day].dropna(subset=["_factor"])
     if snapshot.empty:
         return {}
-    top = snapshot.nlargest(top_n, factor_col)
+    top = snapshot.nlargest(top_n, "_factor")
     w = 1.0 / len(top)
     return dict(zip(top["ticker"], [w] * len(top)))
 
