@@ -63,3 +63,7 @@ test_write.txt
 # Mavis / Claude Code 工作区
 .worktrees/
 .claude/
+# 但 .claude/ 下的项目级文档要入版本（settings.local.json 等保留屏蔽）
+!.claude/PROJECT_HISTORY.md
+!.claude/TODO.md
+!.claude/ISSUES.md
