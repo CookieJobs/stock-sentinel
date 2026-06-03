@@ -35,7 +35,15 @@ class FactorSourceBase(ABC):
 
 
 class AkShareFactorSource(FactorSourceBase):
-    """AkShare 实时全 A 股 spot"""
+    """AkShare 多源全 A 股数据
+
+    三层 fallback：
+    1. stock_zh_a_spot_em: 全 A 股实时 PE/PB/换手率/市值（受频率限制，可能失败）
+    2. stock_info_a_code_name: 全 A 股代码+名称（轻量，5500+ 行，7s 出）
+    3. 缺 PE/PB 时留 None，Tushare 后补
+
+    即使 spot 失败，也能保证 universe 是真实全 A 股。
+    """
 
     name = "akshare"
 
@@ -45,34 +53,51 @@ class AkShareFactorSource(FactorSourceBase):
         except ImportError:
             return pd.DataFrame()
         try:
-            df = ak.stock_zh_a_spot_em()
+            # Step 1: 先拉全 A 股代码 + 名称（轻量，永远能拉）
+            df_codes = ak.stock_info_a_code_name()
+            if df_codes is None or df_codes.empty:
+                return pd.DataFrame()
+            df = df_codes.rename(columns={"code": "ticker", "name": "name"}).copy()
+            df["ticker"] = df["ticker"].astype(str).str.zfill(6)
+            df["market"] = "CN"
+            logger.info("Loaded %d A-share codes from stock_info_a_code_name", len(df))
         except Exception as e:
-            logger.warning("ak.stock_zh_a_spot_em failed: %s", e)
-            return pd.DataFrame()
-        if df is None or df.empty:
+            logger.warning("stock_info_a_code_name failed: %s", e)
             return pd.DataFrame()
 
-        # 标准化列名（东方财富接口字段名）
-        col_map = {
-            "代码": "ticker",
-            "名称": "name",
-            "最新价": "price",
-            "涨跌幅": "change_pct",
-            "市盈率-动态": "pe_ttm",
-            "市净率": "pb",
-            "总市值": "market_cap",
-            "流通市值": "float_cap",
-            "换手率": "turnover_rate",
-            "60日涨跌幅": "change_60d",
-            "年初至今涨跌幅": "change_ytd",
-        }
-        df = df.rename(columns=col_map)
-        # 选出我们需要的列
-        keep = ["ticker", "name", "price", "change_pct", "pe_ttm", "pb",
-                "market_cap", "float_cap", "turnover_rate", "change_60d", "change_ytd"]
-        df = df[[c for c in keep if c in df.columns]].copy()
-        df["market"] = "CN"
-        df["industry"] = None  # 东方财富 spot 不含行业，行业用股票基本信息表
+        # Step 2: 尝试拉全 A 股实时 spot（含 PE/PB，可能失败）
+        try:
+            df_spot = ak.stock_zh_a_spot_em()
+            if df_spot is not None and not df_spot.empty:
+                col_map = {
+                    "代码": "ticker",
+                    "市盈率-动态": "pe_ttm",
+                    "市净率": "pb",
+                    "总市值": "market_cap",
+                    "流通市值": "float_cap",
+                    "换手率": "turnover_rate",
+                    "涨跌幅": "change_pct",
+                    "60日涨跌幅": "change_60d",
+                    "年初至今涨跌幅": "change_ytd",
+                }
+                df_spot = df_spot.rename(columns=col_map)
+                spot_cols = ["ticker", "pe_ttm", "pb", "market_cap", "float_cap",
+                             "turnover_rate", "change_pct", "change_60d", "change_ytd"]
+                df_spot = df_spot[[c for c in spot_cols if c in df_spot.columns]].copy()
+                df_spot["ticker"] = df_spot["ticker"].astype(str).str.zfill(6)
+                # 合并
+                df = df.merge(df_spot, on="ticker", how="left")
+                logger.info("Merged %d spot rows (PE/PB/换手率/市值)", len(df_spot))
+        except Exception as e:
+            logger.warning("stock_zh_a_spot_em failed (PE/PB 留空，等 Tushare 后补): %s", e)
+
+        # 初始化缺失列
+        for col in ["pe_ttm", "pb", "ps_ttm", "market_cap", "float_cap",
+                    "turnover_rate", "change_pct", "change_60d", "change_ytd",
+                    "roe", "gross_margin"]:
+            if col not in df.columns:
+                df[col] = None
+
         return df.reset_index(drop=True)
 
 
