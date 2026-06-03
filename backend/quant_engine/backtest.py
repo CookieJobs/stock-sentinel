@@ -83,6 +83,17 @@ def signal_ma_cross(df: pd.DataFrame, params: dict) -> dict[str, float]:
     return {}
 
 
+def signal_fixed_weights(df: pd.DataFrame, params: dict) -> dict[str, float]:
+    """固定权重信号：按 params['weights'] 字典返回 {ticker: weight}
+
+    用于组合回测（持仓权重已固定，不需要按因子排名）
+    """
+    weights = params.get("weights", {})
+    # 只保留当天 df 里有数据的 ticker
+    available = set(df["ticker"].unique())
+    return {t: w for t, w in weights.items() if t in available}
+
+
 def signal_factor_rank(df: pd.DataFrame, params: dict) -> dict[str, float]:
     """多因子排名：取因子值排名 Top N 等权
 
@@ -377,5 +388,10 @@ SIGNAL_REGISTRY: dict[str, dict] = {
         "fn": signal_factor_rank,
         "default_params": {"factor": "momentum_20d", "top_n": 10},
         "description": "多因子排名：取 Top N 等权",
+    },
+    "fixed_weights": {
+        "fn": signal_fixed_weights,
+        "default_params": {"weights": {}},
+        "description": "固定权重（按 params['weights'] 配置，用于组合回测）",
     },
 }
