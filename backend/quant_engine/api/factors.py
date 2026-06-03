@@ -1,24 +1,74 @@
-"""多因子 API（M0 占位，M3 充实）"""
-from fastapi import APIRouter
+"""选股 API（M3 充实版）
 
-from ..factors import list_factors
+POST /api/quant/factors/refresh          - 刷新全 A 股因子库
+GET  /api/quant/factors/universe/stats   - universe 统计
+GET  /api/quant/factors/list             - 列出所有因子
+POST /api/quant/factors/screen           - 选股
+GET  /api/quant/factors/industries       - 行业列表
+"""
+from fastapi import APIRouter, HTTPException
+
+from ..factor_service import (
+    refresh_universe, screen, list_factors_meta, get_universe_stats,
+)
 
 router = APIRouter(prefix="/factors", tags=["factors"])
 
 
+@router.get("/health")
+def health():
+    return {"module": "factors", "status": "ok", "version": "M3"}
+
+
 @router.get("/list")
-def list_all():
-    """列出所有因子"""
-    return {"factors": list_factors()}
+def list_factors():
+    return {"factors": list_factors_meta()}
+
+
+@router.get("/universe/stats")
+def universe_stats():
+    return get_universe_stats()
+
+
+@router.post("/refresh")
+def refresh():
+    """刷新全 A 股因子库（拉数据 + 算因子 + 入库）"""
+    try:
+        n = refresh_universe()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"刷新失败: {e}")
+    stats = get_universe_stats()
+    return {
+        "inserted": n,
+        "stats": stats,
+        "message": f"成功入库 {n} 条因子值；当前 universe = {stats['universe_size']} 只，数据源 = {stats['source']}",
+    }
 
 
 @router.post("/screen")
-def screen(payload: dict):
-    """选股：按因子筛选 + 排名（M0 占位，M3 充实）"""
-    return {
-        "filters": payload.get("filters", []),
-        "rank_by": payload.get("rank_by"),
-        "top_n": payload.get("top_n", 20),
-        "results": [],
-        "message": "M3 实现：基于 daily_metrics + factor_values 跑多因子选股",
+def screen_stocks(payload: dict):
+    """多条件选股
+
+    payload:
+    {
+      "filters": [{"factor": "pe_ttm", "min": 0, "max": 30}, ...],
+      "rank_by": "pe_ttm",       # 排名因子
+      "top_n": 20,                # 返回前 N
+      "industries": ["银行", "地产"],   # 行业白名单（可选）
+      "markets": ["CN"]            # 市场白名单（可选）
     }
+    """
+    return screen(
+        filters=payload.get("filters", []),
+        rank_by=payload.get("rank_by"),
+        top_n=payload.get("top_n", 20),
+        industries=payload.get("industries"),
+        markets=payload.get("markets"),
+    )
+
+
+@router.get("/industries")
+def list_industries():
+    """列出常见行业（前端筛选用）"""
+    from ..data_source.factor_source import MockFactorSource
+    return {"industries": MockFactorSource.INDUSTRIES}
