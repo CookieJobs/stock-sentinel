@@ -60,3 +60,6 @@ data/*.json
 *.log
 .SANDBOX_TEST
 test_write.txt
+# Mavis / Claude Code 工作区
+.worktrees/
+.claude/
