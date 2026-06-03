@@ -104,14 +104,22 @@ def SAR(high: pd.Series, low: pd.Series, step: float = 0.02, max_step: float = 0
 # ── 震荡类 ──────────────────────────────────────────────────────
 
 def RSI(close: pd.Series, period: int = 14) -> pd.Series:
-    """RSI（相对强弱指标）"""
+    """RSI（相对强弱指标）
+
+    边界处理：
+    - 无下跌（avg_loss=0）→ RSI = 100（强势）
+    - 无上涨（avg_gain=0）→ RSI = 0（弱势）
+    - 都不为 0 → 正常公式 100 - 100/(1+RS)
+    """
     delta = close.diff()
     gain = delta.where(delta > 0, 0.0)
     loss = -delta.where(delta < 0, 0.0)
     avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0, np.nan)
-    return (100 - 100 / (1 + rs)).fillna(50.0)
+    raw = 100 - 100 / (1 + rs)
+    # 修复：avg_loss=0 → RSI=100（无下跌），avg_gain=0 → RSI=0（无上涨）
+    return raw.where(avg_loss > 0, 100.0).where(avg_gain > 0, 0.0)
 
 
 def KDJ(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 9, m1: int = 3, m2: int = 3) -> dict:

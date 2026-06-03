@@ -31,6 +31,8 @@ from typing import Optional, Callable
 import numpy as np
 import pandas as pd
 
+from .factors import FACTOR_REGISTRY
+
 logger = logging.getLogger(__name__)
 
 
@@ -97,21 +99,28 @@ def signal_fixed_weights(df: pd.DataFrame, params: dict) -> dict[str, float]:
 def signal_factor_rank(df: pd.DataFrame, params: dict) -> dict[str, float]:
     """多因子排名：取因子值排名 Top N 等权
 
-    支持内置因子：
-    - momentum_Nd : N 日动量（基于 close.pct_change）
-    - volatility_Nd : N 日波动率
-    也支持外部因子列：df 中已包含的列名
+    支持内置因子（FACTOR_REGISTRY 注册过的）：
+    - momentum_Nd : N 日动量
+    - hist_vol_Nd / volatility_Nd : N 日历史波动率
+    - 其他列名：df 中已包含的列名（外部因子）
     """
     factor = params.get("factor", "momentum_20d")
     top_n = params.get("top_n", 10)
 
+    # 因子方向（asc=越大越好, desc=越小越好）
+    meta = FACTOR_REGISTRY.get(factor, {"direction": "asc"})
+
     df = df.copy()
-    if factor.startswith("momentum_"):
-        n = int(factor.split("_")[1].rstrip("d"))
+    # 标准化因子名前缀（hist_vol_20d → volatility_20d）
+    norm_factor = factor
+    if factor.startswith("hist_vol_"):
+        norm_factor = "volatility_" + factor[len("hist_vol_"):]
+
+    if norm_factor.startswith("momentum_"):
+        n = int(norm_factor.split("_")[1].rstrip("d"))
         df["_factor"] = df.groupby("ticker")["close"].pct_change(n)
-    elif factor.startswith("volatility_"):
-        n = int(factor.split("_")[1].rstrip("d"))
-        log_ret = np.log(df["close"] / df["close"].shift(1))
+    elif norm_factor.startswith("volatility_"):
+        n = int(norm_factor.split("_")[1].rstrip("d"))
         df["_factor"] = df.groupby("ticker")["close"].transform(
             lambda x: np.log(x / x.shift(1)).rolling(n).std()
         )
@@ -125,7 +134,11 @@ def signal_factor_rank(df: pd.DataFrame, params: dict) -> dict[str, float]:
     snapshot = df[df["trade_date"] == last_day].dropna(subset=["_factor"])
     if snapshot.empty:
         return {}
-    top = snapshot.nlargest(top_n, "_factor")
+    # direction=asc（越大越好）→ nlargest；direction=desc（越小越好）→ nsmallest
+    if meta["direction"] == "asc":
+        top = snapshot.nlargest(top_n, "_factor")
+    else:
+        top = snapshot.nsmallest(top_n, "_factor")
     w = 1.0 / len(top)
     return dict(zip(top["ticker"], [w] * len(top)))
 
