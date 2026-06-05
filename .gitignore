@@ -10,7 +10,10 @@ dist/
 downloads/
 eggs/
 .eggs/
+# lib/ 来自 setuptools 模板（指向 site-packages/lib 等），
+# 但 frontend/src/lib/ 是 React 应用的 API 客户端代码，必须跟踪
 lib/
+!frontend/src/lib/
 lib64/
 parts/
 sdist/
