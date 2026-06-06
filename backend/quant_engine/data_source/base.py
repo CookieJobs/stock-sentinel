@@ -6,7 +6,7 @@ from typing import Optional
 
 
 class DataSourceBase(ABC):
-    """统一数据源接口"""
+    """统一数据源接口（K-line）"""
 
     name: str = "Base"
 
@@ -18,4 +18,19 @@ class DataSourceBase(ABC):
 
         Returns: DataFrame with columns [trade_date, open, high, low, close, volume, amount]
         """
+        raise NotImplementedError
+
+
+class FactorSourceBase(ABC):
+    """因子 / Universe 数据源接口
+
+    Returns DataFrame columns:
+      ticker, name, market, industry, pe_ttm, pb, ps_ttm,
+      market_cap, turnover_rate, change_pct, roe, gross_margin
+    """
+
+    name: str = "Base"
+
+    @abstractmethod
+    def get_universe(self) -> pd.DataFrame:
         raise NotImplementedError

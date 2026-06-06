@@ -1,37 +1,28 @@
 """因子数据源抽象 — 选股器数据接入
 
-3 个 source：
-- TushareSource: Tushare Pro（首选，A 股财务最全）
+4 个 source：
+- TushareSource: Tushare Pro（首选，A 股财务最全，需 TUSHARE_TOKEN + 200 积分）
 - AkShareSource: 东方财富/AkShare 实时全 A 股 spot（含 PE/PB/换手率/总市值等）
-- MockSource: 模拟全 A 股（开发演示，Tushare + AkShare 不可用时使用）
+- BaoStockSource: BaoStock（5+年日K + 申万行业 + 完整财务，**免费无积分**）
+- MockSource: 模拟全 A 股（开发演示，其他都不可用时使用）
+
+fallback 链：Tushare → AkShare → BaoStock → Mock
+BaoStock 解锁：Tushare 积分 < 200 时的实际可用方案（AkShare spot_em 经常限流）
+
+注：FactorSourceBase 已统一到 base.py（与 DataSourceBase 同住一处）。
 """
 from __future__ import annotations
 import os
 import time
 import random
 import logging
-from abc import ABC, abstractmethod
 from typing import Optional
 
 import pandas as pd
 
+from .base import FactorSourceBase
+
 logger = logging.getLogger(__name__)
-
-
-class FactorSourceBase(ABC):
-    """因子数据源基类"""
-
-    name: str = "Base"
-
-    @abstractmethod
-    def get_universe(self) -> pd.DataFrame:
-        """获取全 A 股列表 + 基础因子
-
-        Returns DataFrame columns:
-          ticker, name, market, industry, pe_ttm, pb, ps_ttm,
-          market_cap, turnover_rate, change_pct, roe, gross_margin
-        """
-        raise NotImplementedError
 
 
 class AkShareFactorSource(FactorSourceBase):
@@ -238,8 +229,11 @@ class MockFactorSource(FactorSourceBase):
         }
 
 
-# 数据源优先级：Tushare > AkShare > Mock
-SOURCES = [TushareFactorSource, AkShareFactorSource, MockFactorSource]
+# 数据源优先级：Tushare > AkShare > BaoStock > Mock
+# BaoStock 排在 AkShare 后：AkShare 提供更全的 PE/PB/换手率（spot_em 含）
+# 但当 Tushare 积分不足 + AkShare spot 限流时，BaoStock 兜底（含 industry 字段）
+from .baostock_source import BaoStockFactorSource
+SOURCES = [TushareFactorSource, AkShareFactorSource, BaoStockFactorSource, MockFactorSource]
 
 
 def get_factor_source():

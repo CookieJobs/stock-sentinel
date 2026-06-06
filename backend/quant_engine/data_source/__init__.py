@@ -5,19 +5,20 @@
 - 默认按 trade_date 升序
 
 多市场支持：
-- CN（A股）：东方财富（已有，main.py/data_fetcher.py 用的就是）/ AkShare（兜底）
+- CN（A股）：AkShare（封装好）/ BaoStock（5+年日K + PE/PB）/ 东方财富（兜底 + 分钟K）
 - HK（港股）：东方财富
 - US（美股）：Finnhub（已有）
 """
 from .eastmoney_source import EastMoneySource
 from .akshare_source import AkShareSource
 from .finnhub_source import FinnHubSource
+from .baostock_source import BaoStockSource
 from .base import DataSourceBase
 
 
-# 数据源优先级：akshare 优先（封装好）→ 东方财富（直接）→ Finnhub（美股）
+# 数据源优先级：akshare 优先（封装好）→ BaoStock（日K + 因子）→ 东方财富（兜底 + 分钟K）
 SOURCES = {
-    "CN": [AkShareSource, EastMoneySource],
+    "CN": [AkShareSource, BaoStockSource, EastMoneySource],
     "HK": [EastMoneySource, AkShareSource],
     "US": [FinnHubSource],
 }

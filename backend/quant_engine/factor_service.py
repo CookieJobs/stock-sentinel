@@ -84,6 +84,7 @@ def refresh_universe() -> int:
         for _, r in df.iterrows():
             metric_records.append((
                 r["ticker"], today,
+                r.get("name"), r.get("industry"),
                 r.get("pe_ttm"), r.get("pb"), r.get("ps_ttm"), None,
                 r.get("market_cap"), r.get("turnover_rate"),
                 r.get("roe"), None,
@@ -93,11 +94,12 @@ def refresh_universe() -> int:
             ))
         cur.executemany(
             """INSERT OR REPLACE INTO daily_metrics
-               (ticker, trade_date, pe_ttm, pb, ps_ttm, peg,
+               (ticker, trade_date, name, industry,
+                pe_ttm, pb, ps_ttm, peg,
                 market_cap, turnover_rate, roe, roa,
                 revenue_yoy, profit_yoy, gross_margin, net_margin,
                 debt_ratio, free_cash_flow)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             metric_records,
         )
         db.commit()
@@ -150,12 +152,19 @@ def screen(
 
     df = pd.DataFrame([dict(r) for r in rows])
 
-    # 2. 行业筛选（从 daily_metrics 拉行业，简化：暂用 industry 字段如果存在）
-    # daily_metrics 没存 industry，先用 name 模糊匹配（或者 mock 数据有 industry）
-    # v1 简化：忽略 industry 字段（mock 数据存了 industry 但 daily_metrics 表里没存）
-    # TODO: M3 完善时 daily_metrics 加 industry 列
+    # 2. 行业筛选（daily_metrics.industry 列已存；BaoStock 提供申万行业）
+    if industries:
+        df = df[df["industry"].isin(industries)]
 
-    # 3. 多条件筛选
+    # 3. 市场筛选
+    if markets:
+        df = df[df["market"].isin(markets)] if "market" in df.columns else df
+
+    # 4. ST 排除（名字含 ST）
+    if exclude_st and "name" in df.columns:
+        df = df[~df["name"].astype(str).str.contains("ST|\\*ST", na=False, regex=True)]
+
+    # 5. 多条件筛选
     for f in filters:
         factor = f.get("factor")
         if not factor or factor not in df.columns:
@@ -183,7 +192,7 @@ def screen(
 
     df = df.head(top_n)
 
-    # 5. 格式化输出
+    # 6. 格式化输出
     display_cols = ["ticker", "trade_date", "pe_ttm", "pb", "ps_ttm", "market_cap",
                     "turnover_rate", "roe", "gross_margin", "_rank"]
     result = []
@@ -192,6 +201,8 @@ def screen(
             "ticker": r["ticker"],
             "trade_date": str(r["trade_date"]),
             "name": r.get("name", ""),
+            "industry": r.get("industry", ""),
+            "market": r.get("market", "CN"),
             "pe_ttm": _safe_float(r.get("pe_ttm")),
             "pb": _safe_float(r.get("pb")),
             "ps_ttm": _safe_float(r.get("ps_ttm")),

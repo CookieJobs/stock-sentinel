@@ -38,12 +38,14 @@ SCHEMA = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_kline_lookup ON kline(ticker, market, period, adj, trade_date)",
 
-    # 日频估值/财务指标（Tushare / AkShare 入库）
+    # 日频估值/财务指标（Tushare / AkShare / BaoStock 入库）
     """
     CREATE TABLE IF NOT EXISTS daily_metrics (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ticker TEXT NOT NULL,
         trade_date TEXT NOT NULL,
+        name TEXT,                              -- 股票名称（BaoStock 提供）
+        industry TEXT,                          -- 申万行业（BaoStock 提供）
         pe_ttm REAL, pb REAL, ps_ttm REAL, peg REAL,
         market_cap REAL, turnover_rate REAL,
         roe REAL, roa REAL,
@@ -54,6 +56,7 @@ SCHEMA = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_daily_metrics ON daily_metrics(ticker, trade_date)",
+    "CREATE INDEX IF NOT EXISTS idx_daily_metrics_industry ON daily_metrics(industry) WHERE industry IS NOT NULL",
 
     # 因子值（含截面分位排名）
     """
