@@ -229,11 +229,12 @@ class MockFactorSource(FactorSourceBase):
         }
 
 
-# 数据源优先级：Tushare > AkShare > BaoStock > Mock
-# BaoStock 排在 AkShare 后：AkShare 提供更全的 PE/PB/换手率（spot_em 含）
-# 但当 Tushare 积分不足 + AkShare spot 限流时，BaoStock 兜底（含 industry 字段）
+# 数据源优先级：Tushare > BaoStock > AkShare > Mock
+# BaoStock 排 AkShare 前：AkShare spot_em 经常限流，且不提供 industry 字段
+# BaoStock 提供 industry（申万）+ name，PE/PB 都暂时为 None
+# AkShare spot_em 偶尔能给 PE/PB（不保证），但抢不过 BaoStock 的 industry
 from .baostock_source import BaoStockFactorSource
-SOURCES = [TushareFactorSource, AkShareFactorSource, BaoStockFactorSource, MockFactorSource]
+SOURCES = [TushareFactorSource, BaoStockFactorSource, AkShareFactorSource, MockFactorSource]
 
 
 def get_factor_source():
