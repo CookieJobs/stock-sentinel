@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Operating manual**: `AGENTS.md` at the repo root is the AI-maintainer operating
+> manual (session ritual, work loop, escalation policy, closing ritual). Read it
+> first; this file is the architecture reference.
+
 ## Project overview
 
 StockSentinel is a stock monitoring and alerting system tracking drawdown from 52-week highs across US, CN (A-share), and HK markets. A React frontend displays a dashboard; a Python FastAPI backend handles data fetching, persistence, and alerting.
