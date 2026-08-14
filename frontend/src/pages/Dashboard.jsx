@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import BriefingModal from '../components/BriefingModal'
 
 const API_BASE = '/api'
 
@@ -70,6 +71,9 @@ export default function Dashboard() {
   const [alertHistory, setAlertHistory] = useState([])
   const [showAlerts, setShowAlerts] = useState(false)
   const [alertTab, setAlertTab] = useState('unread') // 'unread' | 'history'
+
+  // Daily briefing panel
+  const [showBriefing, setShowBriefing] = useState(false)
 
   // Add stock modal
   const [showAddModal, setShowAddModal] = useState(false)
@@ -531,6 +535,12 @@ export default function Dashboard() {
               )}
             </button>
             <button
+              onClick={() => setShowBriefing(true)}
+              className="px-3 py-1.5 text-xs bg-sent-border/50 text-sent-dim rounded-lg hover:text-white hover:bg-sent-border transition-colors"
+            >
+              📰 简报
+            </button>
+            <button
               onClick={handleExportCSV}
               disabled={stocks.length === 0}
               className="px-3 py-1.5 text-xs bg-sent-border/50 text-sent-dim rounded-lg hover:text-white hover:bg-sent-border transition-colors disabled:opacity-50"
@@ -786,6 +796,9 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Daily Briefing Modal */}
+      {showBriefing && <BriefingModal onClose={() => setShowBriefing(false)} />}
 
       {/* Alert Panel Modal */}
       {showAlerts && (
