@@ -1,6 +1,6 @@
 # Issue 01: 后端价格历史落库（表 + 采样 + 时间桶 + 保留清理）
 
-Status: ready-for-agent
+Status: done
 
 ## 描述
 
@@ -21,3 +21,7 @@ Status: ready-for-agent
 ## Blocked by
 
 None - can start immediately
+
+## Comments
+
+- 2026-08-14：完成（commit 87536c2）。`database.py` 新增 `price_history` 表 + 索引；`monitor.py` 新增 `_price_bucket`/`_record_price_point`（15 分钟桶幂等、demo 不落库、写入时惰性清理 90 天前旧行）；`test_price_history.py` 6/6 通过。提交时用过滤 diff 只暂存本 issue 改动，未卷入工作区未提交的 demo 守卫改动。

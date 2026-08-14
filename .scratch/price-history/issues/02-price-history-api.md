@@ -1,6 +1,6 @@
 # Issue 02: 历史行情查询 API
 
-Status: ready-for-agent
+Status: done
 
 ## 描述
 
@@ -19,3 +19,7 @@ Status: ready-for-agent
 ## Blocked by
 
 - `01-price-history-backend`（需要表与落库逻辑）
+
+## Comments
+
+- 2026-08-14：完成（commit 87536c2）。`GET /api/history/{ticker}?days=30` 已注册（静态托管 catch-all 之前），返回 `{ticker, market, days, points}`，无数据 200 + 空数组，`days` 上限 90；API 冒烟用例通过。

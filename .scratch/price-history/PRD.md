@@ -81,6 +81,13 @@ demo 回退数据**不落库**（与 `monitor.py` 已有"demo 不覆盖真实数
 - 历史数据删除/管理 UI（保留策略自动清理即可）。
 - 分钟级实时图表、多指标（成交量等）历史。
 
+## Todo
+
+- [x] `01-price-history-backend.md` — 后端落库（表 + 采样 + 桶 + 清理 + 测试）
+- [x] `02-price-history-api.md` — 历史行情查询 API
+- [x] `03-price-history-sparkline.md` — 前端回撤趋势 sparkline
+- [ ] 简报内嵌趋势图（下一迭代）
+
 ## Further Notes
 
 - 落库只发生在 `_fetch_one_stock` 真实数据分支；当前工作区 `backend/data_fetcher.py`、`backend/monitor.py`
