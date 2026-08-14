@@ -5,20 +5,27 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
+# 绕过系统代理直连数据源（系统代理可能不稳定或限速）
+for _key in ("NO_PROXY", "no_proxy"):
+    _existing = os.environ.get(_key, "")
+    _suffix = ",push2.eastmoney.com,push2his.eastmoney.com,finnhub.io"
+    os.environ[_key] = (_existing + _suffix) if _existing else "push2.eastmoney.com,push2his.eastmoney.com,finnhub.io"
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
 from contextlib import asynccontextmanager
 
 from database import init_db
 from models import StockResponse, AddStockRequest, UpdateStockRequest
 from monitor import StockMonitor
 from alerter import StockAlerter
+from briefing import BriefingScheduler, list_briefings, get_latest_briefing, get_briefing
 
 monitor = StockMonitor()
 alerter = StockAlerter()
+briefing_scheduler = BriefingScheduler()
 
 
 @asynccontextmanager
@@ -26,8 +33,10 @@ async def lifespan(app: FastAPI):
     init_db()
     monitor.start_auto_refresh()
     alerter.start()
+    briefing_scheduler.start()
     yield
     alerter.stop()
+    briefing_scheduler.stop()
     monitor.stop_auto_refresh()
 
 
@@ -46,6 +55,8 @@ app.add_middleware(
 def health():
     return {"status": "ok", "service": "StockSentinel"}
 
+
+# ── Stock API ───────────────────────────────────────────────
 
 @app.get("/api/stocks/", response_model=list[StockResponse])
 def get_all_stocks():
@@ -122,34 +133,6 @@ def auto_refresh_status():
     }
 
 
-# Serve frontend static files
-_DEV_MODE = os.environ.get("DEV_MODE", "").lower() == "true"
-static_dir = Path(__file__).parent / "static"
-
-if _DEV_MODE:
-    from starlette.responses import RedirectResponse
-
-    @app.get("/{full_path:path}")
-    async def redirect_to_dev(full_path: str):
-        """Dev mode: redirect non-API visits to Vite dev server"""
-        return RedirectResponse(url="http://localhost:5173")
-
-    # Also mount assets from build if available
-    if (static_dir / "assets").exists():
-        app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
-
-elif static_dir.exists():
-    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
-
-    @app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
-        """Serve frontend SPA — fallback to index.html"""
-        index_path = static_dir / "index.html"
-        if index_path.exists():
-            return FileResponse(str(index_path))
-        return {"detail": "Frontend not built"}
-
-
 # ── Alert API ───────────────────────────────────────────────
 
 @app.get("/api/alerts/")
@@ -198,6 +181,70 @@ def clear_alert_history():
     """清除所有历史告警"""
     alerter.unread.clear_history()
     return {"detail": "已清除所有历史"}
+
+
+# ── Briefing API ────────────────────────────────────────────
+
+@app.get("/api/briefings/")
+def get_briefings():
+    """获取简报历史列表"""
+    return list_briefings()
+
+
+@app.get("/api/briefings/latest")
+def get_briefing_latest():
+    """获取最新简报全文"""
+    briefing = get_latest_briefing()
+    if not briefing:
+        raise HTTPException(status_code=404, detail="暂无简报")
+    return briefing
+
+
+@app.get("/api/briefings/{briefing_id}")
+def get_briefing_by_id(briefing_id: int):
+    """按 id 获取单条简报"""
+    briefing = get_briefing(briefing_id)
+    if not briefing:
+        raise HTTPException(status_code=404, detail="简报未找到")
+    return briefing
+
+
+@app.post("/api/briefings/generate")
+def generate_briefing():
+    """手动立即生成当日简报"""
+    result = briefing_scheduler.generator.generate()
+    if not result.get("briefing"):
+        raise HTTPException(status_code=500, detail="简报生成失败")
+    return result
+
+
+# ── 静态文件托管（必须放在所有 /api 路由之后，避免遮蔽 API）──
+
+_DEV_MODE = os.environ.get("DEV_MODE", "").lower() == "true"
+static_dir = Path(__file__).parent / "static"
+
+if _DEV_MODE:
+    from starlette.responses import RedirectResponse
+
+    @app.get("/{full_path:path}")
+    async def redirect_to_dev(full_path: str):
+        """Dev mode: redirect non-API visits to Vite dev server"""
+        return RedirectResponse(url="http://localhost:5173")
+
+    # Also mount assets from build if available
+    if (static_dir / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+
+elif static_dir.exists():
+    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """Serve frontend SPA — fallback to index.html"""
+        index_path = static_dir / "index.html"
+        if index_path.exists():
+            return FileResponse(str(index_path))
+        return {"detail": "Frontend not built"}
 
 
 if __name__ == "__main__":

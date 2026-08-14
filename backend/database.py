@@ -91,5 +91,35 @@ def init_db():
         )
     """)
 
+    # 每日简报：股票快照（供简报做"昨今对比"）
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            snapshot_date TEXT NOT NULL,
+            ticker TEXT NOT NULL,
+            name TEXT,
+            market TEXT,
+            current_price REAL,
+            change_pct REAL,
+            drawdown REAL,
+            week52_high REAL,
+            threshold REAL,
+            UNIQUE(snapshot_date, ticker)
+        )
+    """)
+
+    # 每日简报：简报记录（每天一条，LLM 或模板生成）
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS briefings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            briefing_date TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'template',
+            stats TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     db.commit()
     db.close()
