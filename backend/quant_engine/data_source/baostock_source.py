@@ -19,6 +19,8 @@ BaoStock 优势：
 """
 from __future__ import annotations
 import logging
+import queue
+import socket
 import threading
 from typing import Optional
 
@@ -27,6 +29,11 @@ import pandas as pd
 from .base import DataSourceBase, FactorSourceBase
 
 logger = logging.getLogger(__name__)
+
+# BaoStock 的 send_msg 是 `while True: recv` 循环，服务器不可达/被代理掐断时
+# recv 返回 b'' 也不退出，会无限空转（网络代理常见 5s 后断连）。这里把 login
+# 放进带超时的守护线程：超时就放弃，让 fallback 链快速降级到 AkShare/Mock。
+BAOSTOCK_LOGIN_TIMEOUT = 10
 
 
 # ── BaoStock 周期映射（BaoStock 只支持 d/w/m） ──────────────────
@@ -63,13 +70,45 @@ class _BaoStockSession:
             with cls._state_lock:
                 if not cls._logged_in:
                     import baostock as bs
-                    lg = bs.login()
+
+                    def _login_worker():
+                        # 只对这个线程新建的 socket 生效：recv 空转之外至少
+                        # connect/recv 阻塞不会超过该时长
+                        socket.setdefaulttimeout(BAOSTOCK_LOGIN_TIMEOUT)
+                        return bs.login()
+
+                    lg = cls._login_with_timeout(_login_worker)
                     if lg.error_code != "0":
                         raise RuntimeError(f"BaoStock login failed: {lg.error_msg}")
                     cls._logged_in = True
                     logger.info("BaoStock logged in")
         import baostock as bs
         return bs
+
+    @classmethod
+    def _login_with_timeout(cls, fn):
+        """在守护线程里执行登录；超时即放弃（线程随进程退出，不阻塞主流程）"""
+        q: "queue.Queue" = queue.Queue(maxsize=1)
+
+        def worker():
+            try:
+                q.put(("ok", fn()))
+            except Exception as e:  # noqa: BLE001 — 任何失败都走 fallback
+                q.put(("exc", e))
+
+        t = threading.Thread(target=worker, name="baostock-login", daemon=True)
+        t.start()
+        try:
+            kind, val = q.get(timeout=BAOSTOCK_LOGIN_TIMEOUT)
+        except queue.Empty:
+            logger.warning(
+                "BaoStock login timed out after %.1fs — fallback to next source",
+                BAOSTOCK_LOGIN_TIMEOUT,
+            )
+            raise RuntimeError(f"BaoStock login timed out after {BAOSTOCK_LOGIN_TIMEOUT}s")
+        if kind == "exc":
+            raise val
+        return val
 
     @classmethod
     def logout(cls):
