@@ -43,15 +43,37 @@ assert DataFetcher.get_market_status(-5) == 'normal'
 assert DataFetcher.get_market_status(None) == 'normal'
 print('get_market_status: PASS')
 
-# test demo fallback for 3 markets
-us = DataFetcher.get_stock_info('AAPL')
-cn = DataFetcher.get_stock_info('600519')
-hk = DataFetcher.get_stock_info('00700')
-for r, m in [(us, 'US'), (cn, 'CN'), (hk, 'HK')]:
-    assert r is not None, f'{m} returned None'
-    assert r['market'] == m, f'{m} market mismatch: {r["market"]}'
-    assert r['source'] == 'demo', f'{m} source is {r["source"]}'
-print('DEMO 3-market fallback: PASS')
+# test demo fallback for 3 markets（确定性：屏蔽真实 API，只验证回退路径）
+# 东财/Finnhub 可达时返回真实数据，直接断言 source=='demo' 会随网络环境漂移；
+# 改为临时把三个取数方法替换为失败，验证回退逻辑本身，finally 中恢复。
+_orig_fetch = {
+    '_get_finnhub_quote': DataFetcher._get_finnhub_quote,
+    '_get_eastmoney_quote': DataFetcher._get_eastmoney_quote,
+    '_get_eastmoney_hk_quote': DataFetcher._get_eastmoney_hk_quote,
+}
+for _name in _orig_fetch:
+    setattr(DataFetcher, _name, staticmethod(lambda *a, **k: None))
+
+try:
+    for t, m in [('AAPL', 'US'), ('600519', 'CN'), ('00700', 'HK')]:
+        r = DataFetcher.get_stock_info(t)
+        assert r is not None, f'{m} returned None'
+        assert r['market'] == m, f'{m} market mismatch: {r["market"]}'
+        assert r['source'] == 'demo', f'{m} source is {r["source"]}'
+    print('DEMO 3-market fallback: PASS')
+
+    # Check a few specific demo values（价格动态 ±3%，sector 走静态映射兜底）
+    for t in ['AAPL', '600519', '00700']:
+        r = DataFetcher.get_stock_info(t)
+        base = DEMO_DATA[t]['current_price']
+        assert base * 0.97 <= r['current_price'] <= base * 1.03, \
+            f'{t} price out of range: {r["current_price"]}'
+        assert r['name'] == DEMO_DATA[t]['name'], f'{t} name mismatch: {r["name"]}'
+        assert r['sector'] == _SECTOR_MAP[t], f'{t} sector mismatch: {r["sector"]}'
+    print('Specific value checks: PASS')
+finally:
+    for _name, _orig in _orig_fetch.items():
+        setattr(DataFetcher, _name, _orig)
 
 # test all DEMO_DATA stocks have required keys
 from collections import Counter
@@ -72,19 +94,5 @@ if all_ok:
 c = Counter(d['market'] for d in DEMO_DATA.values())
 print(f'Market distribution: {dict(c)}')
 
-# Check a few specific values (prices now dynamic within ±3%)
-aapl = DataFetcher.get_stock_info('AAPL')
-assert 264 < aapl['current_price'] < 282, f'AAPL price out of range: {aapl["current_price"]}'
-assert aapl['sector'] == 'Technology'
-
-moutai = DataFetcher.get_stock_info('600519')
-assert 1330 < moutai['current_price'] < 1413, f'Moutai price out of range: {moutai["current_price"]}'
-assert moutai['sector'] == '白酒'
-
-tencent = DataFetcher.get_stock_info('00700')
-assert 470 < tencent['current_price'] < 500, f'Tencent price out of range: {tencent["current_price"]}'
-assert tencent['sector'] == '互联网'
-
-print('Specific value checks: PASS')
 print()
 print('ALL TESTS PASSED')
