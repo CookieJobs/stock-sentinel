@@ -269,6 +269,7 @@ class StockMonitor:
                 ),
             )
             db.commit()
+            self._record_price_point(data)
             return data
         finally:
             db.close()
@@ -381,3 +382,60 @@ class StockMonitor:
             stock = self.get_stock_by_ticker(ticker)
             return {"success": True, "stock": stock, "error": None}
         return {"success": False, "stock": None, "error": "数据获取失败，请检查网络或 API Key"}
+
+    # ── 历史行情落库（price_history）──────────────────────────
+
+    @staticmethod
+    def _price_bucket(dt: datetime) -> str:
+        """北京时间 → 15 分钟桶 'YYYY-MM-DD HH:MM'（回撤趋势图的采样粒度）"""
+        return dt.strftime("%Y-%m-%d %H:") + f"{dt.minute // 15 * 15:02d}"
+
+    def _record_price_point(self, data: Optional[Dict[str, Any]]) -> None:
+        """真实行情落库 price_history（15 分钟桶幂等，demo 数据不落库）"""
+        if not data or data.get("source") == "demo":
+            return
+        now = datetime.now(timezone(timedelta(hours=8)))
+        retention_days = int(os.environ.get("PRICE_HISTORY_RETENTION_DAYS", "90"))
+        cutoff = (now - timedelta(days=retention_days)).isoformat()
+        db = get_db()
+        try:
+            db.execute(
+                """INSERT OR REPLACE INTO price_history
+                   (ticker, market, name, bucket, current_price, change_pct, drawdown, week52_high, captured_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    data.get("ticker"),
+                    data.get("market"),
+                    data.get("name"),
+                    self._price_bucket(now),
+                    data.get("current_price"),
+                    data.get("change_pct"),
+                    data.get("drawdown"),
+                    data.get("week52_high"),
+                    now.isoformat(),
+                ),
+            )
+            # 惰性清理过期行（保留策略默认 90 天）
+            db.execute("DELETE FROM price_history WHERE captured_at < ?", (cutoff,))
+            db.commit()
+        finally:
+            db.close()
+
+    def get_price_history(self, ticker: str, days: int = 30) -> dict:
+        """查询单只股票的历史行情序列（升序），供趋势图使用"""
+        ticker = ticker.strip().upper()
+        days = max(1, min(int(days), 90))
+        cutoff = (datetime.now(timezone(timedelta(hours=8))) - timedelta(days=days)).isoformat()
+        db = get_db()
+        try:
+            rows = db.execute(
+                """SELECT bucket, market, captured_at, current_price, change_pct, drawdown, week52_high
+                   FROM price_history WHERE ticker = ? AND captured_at >= ?
+                   ORDER BY bucket ASC""",
+                (ticker, cutoff),
+            ).fetchall()
+        finally:
+            db.close()
+        points = [dict(r) for r in rows]
+        market = points[0]["market"] if points else None
+        return {"ticker": ticker, "market": market, "days": days, "points": points}

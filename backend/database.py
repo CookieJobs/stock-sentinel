@@ -121,5 +121,23 @@ def init_db():
         )
     """)
 
+    # 历史行情：高频连续采样（回撤趋势图数据源，15 分钟桶幂等）
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS price_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            market TEXT,
+            name TEXT,
+            bucket TEXT NOT NULL,          -- 北京时间 YYYY-MM-DD HH:MM，对齐 15 分钟
+            current_price REAL,
+            change_pct REAL,
+            drawdown REAL,
+            week52_high REAL,
+            captured_at TEXT NOT NULL,     -- ISO 时间戳（北京时间）
+            UNIQUE(ticker, bucket)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker, bucket)")
+
     db.commit()
     db.close()

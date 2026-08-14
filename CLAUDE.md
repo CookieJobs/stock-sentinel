@@ -32,7 +32,7 @@ python backend/test_data_fetcher.py       # Run data fetcher smoke tests
 ### Backend (`backend/`)
 
 - **`main.py`** — FastAPI app entry point. Lifespan handler starts `StockMonitor` (auto-refresh) and `StockAlerter` (periodic alert checks). Serves both REST API (`/api/*`) and the built frontend static files from `backend/static/`.
-- **`monitor.py`** — `StockMonitor` class. CRUD for tracked stocks, background auto-refresh loop (30s timer; skips US stocks during CN/HK market hours 09:30-16:00 Beijing time to respect Finnhub rate limits), per-stock refresh, and batch refresh with progress tracking via `task_id`.
+- **`monitor.py`** — `StockMonitor` class. CRUD for tracked stocks, background auto-refresh loop (30s timer; skips US stocks during CN/HK market hours 09:30-16:00 Beijing time to respect Finnhub rate limits), per-stock refresh, and batch refresh with progress tracking via `task_id`. Also records real quote data into `price_history` (15-min bucket, idempotent; demo fallback never recorded).
 - **`data_fetcher.py`** — `DataFetcher` class with static methods. Multi-market data pipeline:
   - US: Finnhub API (`/quote`, `/stock/metric`, `/stock/profile2`) — requires `FINNHUB_API_KEY`
   - CN: 东方财富 push2 API (real-time quote) + K-line API (52-week high/low from 300 weekly candles, `fltt=1` = price in 分/100)
@@ -41,7 +41,7 @@ python backend/test_data_fetcher.py       # Run data fetcher smoke tests
   - `detect_market()`: 6-digit numeric → CN, 1-5 digit numeric → HK, `.HK` suffix → HK, else US
 - **`alerter.py`** — `StockAlerter` background thread (interval: `ALERT_CHECK_INTERVAL`, default 300s). Checks each stock's drawdown against its threshold; deduplicates per-ticker per-day via `alert_history` table; stores unread alerts in `alert_unread` table.
 - **`briefing.py`** — 每日简报（Daily Briefing）。`BriefingGenerator`：采集当日股票快照（`stock_snapshots` 表）→ 组装上下文（含与上一份快照的"昨今对比"）→ 调用 LLM（OpenAI 兼容接口，`LLM_API_KEY`/`LLM_BASE_URL`/`LLM_MODEL` 配置）生成 markdown 简报；无 Key 或调用失败时自动降级为确定性模板。`BriefingScheduler`：daemon 线程每 60s 检查，北京时间到点（`BRIEFING_TIME`，默认 08:30）且当日未生成则触发。简报存 `briefings` 表（每天一条，REPLACE）。API：`GET /api/briefings/`、`GET /api/briefings/latest`、`GET /api/briefings/{id}`、`POST /api/briefings/generate`。
-- **`database.py`** — SQLite at `data/sentinel.db`. Creates `stocks`, `settings`, `alert_history`, `alert_unread`, `stock_snapshots`, `briefings` tables on init. Includes ad-hoc column migrations via `ALTER TABLE ADD COLUMN` with try/except.
+- **`database.py`** — SQLite at `data/sentinel.db`. Creates `stocks`, `settings`, `alert_history`, `alert_unread`, `stock_snapshots`, `briefings`, `price_history` tables on init. Includes ad-hoc column migrations via `ALTER TABLE ADD COLUMN` with try/except.
 - **`models.py`** — Pydantic v2 request/response models (`StockResponse`, `AddStockRequest`, `UpdateStockRequest`).
 
 ### Frontend (`frontend/`)
