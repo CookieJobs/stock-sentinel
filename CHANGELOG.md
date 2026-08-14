@@ -2,6 +2,23 @@
 
 AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加条目。
 
+## 2026-08-15 — 与 GitHub 合并：量化分析平台（v1.0）入库
+
+- 同步远端 20 个提交：合并 `origin/main`（本地 +10 提交、远端 +20 提交，分叉点 2026-05-16）。
+  解决 4 处冲突：`AGENTS.md`（本地操作手册 × 远端协作指南合并）、`CLAUDE.md`（Backend 架构段合并，
+  保留量化分层 + 本地 briefing/price_history 描述）、`backend/main.py`（保留双方 import）、
+  `backend/static/index.html`（取远端，随后重新 build 覆盖）。
+- 入库内容：`backend/quant_engine/` 全套（M0-M6：K 线 / 指标 / 因子选股 / 回测 / 组合 / 风险，
+  数据源 AkShare / BaoStock / 东财 / Finnhub）、前端 6 页面 + react-router、
+  `backend/tests/quant_engine/`（137 测试）、USER_GUIDE / README / quant-roadmap / ADR 文档。
+- 修复 `fix(quant)`：BaoStock login 无超时——其 `send_msg` 是 `while: recv` 循环，
+  网络代理断连（recv 返回 b''）时无限空转，因子刷新/测试挂 68s+；改为 daemon 线程 + 10s 超时，
+  fallback 链 12.5s 内完成。验证：pytest 137/137 通过、`test_data_fetcher.py` 全过、
+  前端 lint 0 警告 + build 通过。
+- 未决：工作区 `data_fetcher.py`/`monitor.py` 未提交改动（日志/HTTP 直连/demo 防覆盖）未纳入提交；
+  本机 akshare 因 openpyxl 版本（3.0.10 < 3.1.0）降级不可用，因子数据走 Mock fallback；
+  尚未推送合并结果到 GitHub（需用户确认）。
+
 ## 2025-08-14 — 基础设施：AI 主导模式起步
 
 - 新增 `AGENTS.md`：AI 维护者操作手册（开工仪式 / 工作循环 / 升级规则 / 收工仪式），
