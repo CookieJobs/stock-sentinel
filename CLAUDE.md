@@ -40,7 +40,8 @@ python backend/test_data_fetcher.py       # Run data fetcher smoke tests
   - Falls back to built-in `DEMO_DATA` dict when API calls fail or no key is set
   - `detect_market()`: 6-digit numeric → CN, 1-5 digit numeric → HK, `.HK` suffix → HK, else US
 - **`alerter.py`** — `StockAlerter` background thread (interval: `ALERT_CHECK_INTERVAL`, default 300s). Checks each stock's drawdown against its threshold; deduplicates per-ticker per-day via `alert_history` table; stores unread alerts in `alert_unread` table.
-- **`database.py`** — SQLite at `data/sentinel.db`. Creates `stocks`, `settings`, `alert_history`, `alert_unread` tables on init. Includes ad-hoc column migrations via `ALTER TABLE ADD COLUMN` with try/except.
+- **`briefing.py`** — 每日简报（Daily Briefing）。`BriefingGenerator`：采集当日股票快照（`stock_snapshots` 表）→ 组装上下文（含与上一份快照的"昨今对比"）→ 调用 LLM（OpenAI 兼容接口，`LLM_API_KEY`/`LLM_BASE_URL`/`LLM_MODEL` 配置）生成 markdown 简报；无 Key 或调用失败时自动降级为确定性模板。`BriefingScheduler`：daemon 线程每 60s 检查，北京时间到点（`BRIEFING_TIME`，默认 08:30）且当日未生成则触发。简报存 `briefings` 表（每天一条，REPLACE）。API：`GET /api/briefings/`、`GET /api/briefings/latest`、`GET /api/briefings/{id}`、`POST /api/briefings/generate`。
+- **`database.py`** — SQLite at `data/sentinel.db`. Creates `stocks`, `settings`, `alert_history`, `alert_unread`, `stock_snapshots`, `briefings` tables on init. Includes ad-hoc column migrations via `ALTER TABLE ADD COLUMN` with try/except.
 - **`models.py`** — Pydantic v2 request/response models (`StockResponse`, `AddStockRequest`, `UpdateStockRequest`).
 
 ### Frontend (`frontend/`)
