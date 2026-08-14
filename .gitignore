@@ -70,3 +70,6 @@ test_write.txt
 !.claude/PROJECT_HISTORY.md
 !.claude/TODO.md
 !.claude/ISSUES.md
+
+# npm 本地缓存（沙箱内安装依赖用）
+frontend/.npm-cache/
