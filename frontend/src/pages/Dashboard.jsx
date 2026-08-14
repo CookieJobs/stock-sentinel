@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import BriefingModal from '../components/BriefingModal'
+import Sparkline from '../components/Sparkline'
 
 const API_BASE = '/api'
 
@@ -107,6 +108,39 @@ export default function Dashboard() {
     }
   }, [])
 
+  // 回撤趋势历史（ticker → drawdown 序列；不足两点为 null 显示占位）
+  const [historyMap, setHistoryMap] = useState({})
+
+  const loadHistories = useCallback(async (tickers) => {
+    const results = await Promise.all(
+      tickers.map(async (t) => {
+        try {
+          const res = await fetch(`${API_BASE}/history/${encodeURIComponent(t)}?days=30`)
+          if (!res.ok) return [t, null]
+          const data = await res.json()
+          const points = (data.points || []).map((p) => p.drawdown)
+          return [t, points.length >= 2 ? points : null]
+        } catch (err) {
+          console.error(`History fetch error for ${t}:`, err)
+          return [t, null]
+        }
+      })
+    )
+    setHistoryMap((prev) => {
+      const next = { ...prev }
+      for (const [t, pts] of results) next[t] = pts
+      return next
+    })
+  }, [])
+
+  // 首次拿到股票列表后拉一次历史（避免每次刷新都重拉）
+  const historiesLoadedRef = useRef(false)
+  useEffect(() => {
+    if (historiesLoadedRef.current || stocks.length === 0) return
+    historiesLoadedRef.current = true
+    loadHistories(stocks.map((s) => s.ticker))
+  }, [stocks, loadHistories])
+
   const fetchAlertCount = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/alerts/count`)
@@ -116,7 +150,7 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Alert count error:', err)
     }
-  }, [])
+  }, [setAlertCount])
 
   const fetchAlertList = useCallback(async () => {
     try {
@@ -127,7 +161,7 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Alert list error:', err)
     }
-  }, [])
+  }, [setAlerts])
 
   const fetchAlertHistory = useCallback(async () => {
     try {
@@ -138,7 +172,7 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Alert history error:', err)
     }
-  }, [])
+  }, [setAlertHistory])
 
   useEffect(() => {
     fetchData()
@@ -195,6 +229,7 @@ export default function Dashboard() {
       // 最终兜底一次全量同步
       if (progress?.status === 'completed') {
         await fetchData()
+        loadHistories(stocks.map((s) => s.ticker)) // 刷新后同步趋势数据
       } else if (progress?.status === 'error') {
         showToast('error', `刷新异常: ${progress.error || '未知错误'}`)
       }
@@ -622,6 +657,7 @@ export default function Dashboard() {
                 <th className="px-3 py-2.5 text-right whitespace-nowrap">52W高</th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap">52W高日期</th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleSort('drawdown')}>回撤 <SortIcon column="drawdown" sortConfig={sortConfig} /></th>
+                <th className="px-3 py-2.5 text-left whitespace-nowrap">趋势</th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap">阈值</th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleSort('pe_ratio')}>P/E</th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap">距低</th>
@@ -631,7 +667,7 @@ export default function Dashboard() {
             <tbody>
               {sortedStocks.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="px-4 py-12 text-center text-sent-dim">
+                  <td colSpan={14} className="px-4 py-12 text-center text-sent-dim">
                     暂无数据
                   </td>
                 </tr>
@@ -685,6 +721,9 @@ export default function Dashboard() {
                       {stock.drawdown != null
                         ? `${Number(stock.drawdown).toFixed(2)}%`
                         : '--'}
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap" title="近 30 天回撤走势">
+                      <Sparkline points={historyMap[stock.ticker] ?? null} status={stock.market_status} />
                     </td>
                     <td className="px-3 py-2.5 text-right text-sent-dim whitespace-nowrap">
                       {stock.threshold != null ? `${Math.abs(stock.threshold)}%` : '--'}
