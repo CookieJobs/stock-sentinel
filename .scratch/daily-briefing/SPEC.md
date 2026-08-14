@@ -1,6 +1,6 @@
 # SPEC: 每日简报（Daily Briefing）
 
-Status: ready-for-agent
+Status: done
 Owner: agent
 Version: 1.0
 Date: 2026-05-27（按项目时间线）
@@ -205,3 +205,8 @@ LLM_MODEL=deepseek-chat
 - 推送渠道（飞书/Lark、邮件）
 - 简报内嵌图表（回撤趋势线，需历史行情落库）
 - 自然语言查询（NL → 结构化筛选）
+
+## Comments
+
+- 2026-08-14：v1 里程碑 M1–M4 全部完成并提交（backend `briefing.py` / 调度 / API / 前端弹窗 / 测试 5/5），`Status: done`。
+- 后续迭代项中「推送渠道」「新闻归因」已拆为 `issues/02`、`issues/03`（均 `ready-for-human`，涉及外部服务）；「简报内嵌图表」依赖历史行情落库，见新功能 PRD（`.scratch/price-history/PRD.md`）。

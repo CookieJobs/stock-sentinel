@@ -1,6 +1,6 @@
 # Issue 02: 前端告警弹窗内容
 
-Status: ready-for-agent
+Status: done
 
 ## 描述
 
@@ -29,3 +29,7 @@ Status: ready-for-agent
 - [x] ESLint — 无错误
 - [x] 弹窗打开时获取告警列表
 - [x] 清除按钮调用 `POST /api/alerts/clear` 并重置本地 state
+
+## Comments
+
+- 2026-08-14（agent 收尾）：验收全部完成，`Status: done`（此前状态行停留在 ready-for-agent 属记录债务，本次清理）。

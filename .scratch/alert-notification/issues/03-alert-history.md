@@ -1,6 +1,6 @@
 # Issue 03: 告警历史记录
 
-Status: ready-for-agent
+Status: done
 
 ## 描述
 
@@ -28,3 +28,7 @@ Status: ready-for-agent
 - [x] 后端 API 支持历史查询
 - [x] 前端显示历史告警列表
 - [x] 构建无报错
+
+## Comments
+
+- 2026-08-14（agent 收尾）：验收全部完成，`Status: done`（此前状态行停留在 ready-for-agent 属记录债务，本次清理）。

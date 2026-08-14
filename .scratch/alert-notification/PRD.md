@@ -51,10 +51,10 @@ ALERT_DEDUP_HOURS=24
 
 ## 状态机
 
-`needs-triage` → `ready-for-agent` → `wontfix`
+`needs-triage` → `ready-for-agent` → `done`（或 `wontfix`）
 
 ## Todo
 
 - [x] `01-alert-backend.md` — 后端告警核心逻辑
 - [x] `02-alert-frontend-settings.md` — 前端通知渠道配置 UI
-- [ ] `03-alert-history.md` — 告警历史记录
+- [x] `03-alert-history.md` — 告警历史记录

@@ -1,6 +1,6 @@
 # Issue 01: 后端告警核心逻辑
 
-Status: ready-for-agent
+Status: done
 
 ## 描述
 
@@ -41,3 +41,7 @@ Status: ready-for-agent
 - [x] 去重逻辑测试通过（同一 ticker 第二次不触发）
 - [x] `check_stock_alert()` 逻辑正确（threshold < 0 时才触发）
 - [x] API 端点已注册到 FastAPI
+
+## Comments
+
+- 2026-08-14（agent 收尾）：验收全部完成，`Status: done`（此前状态行停留在 ready-for-agent 属记录债务，本次清理）。
