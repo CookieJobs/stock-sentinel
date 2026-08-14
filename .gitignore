@@ -10,7 +10,10 @@ dist/
 downloads/
 eggs/
 .eggs/
+# lib/ 来自 setuptools 模板（指向 site-packages/lib 等），
+# 但 frontend/src/lib/ 是 React 应用的 API 客户端代码，必须跟踪
 lib/
+!frontend/src/lib/
 lib64/
 parts/
 sdist/
@@ -60,3 +63,10 @@ data/*.json
 *.log
 .SANDBOX_TEST
 test_write.txt
+# Mavis / Claude Code 工作区
+.worktrees/
+.claude/
+# 但 .claude/ 下的项目级文档要入版本（settings.local.json 等保留屏蔽）
+!.claude/PROJECT_HISTORY.md
+!.claude/TODO.md
+!.claude/ISSUES.md

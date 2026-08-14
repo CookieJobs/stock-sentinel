@@ -22,6 +22,8 @@ from models import StockResponse, AddStockRequest, UpdateStockRequest
 from monitor import StockMonitor
 from alerter import StockAlerter
 from briefing import BriefingScheduler, list_briefings, get_latest_briefing, get_briefing
+from quant_engine.db import init_quant_db
+from quant_engine.api import api_router
 
 monitor = StockMonitor()
 alerter = StockAlerter()
@@ -31,6 +33,7 @@ briefing_scheduler = BriefingScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    init_quant_db()  # 量化引擎表
     monitor.start_auto_refresh()
     alerter.start()
     briefing_scheduler.start()
@@ -40,7 +43,10 @@ async def lifespan(app: FastAPI):
     monitor.stop_auto_refresh()
 
 
-app = FastAPI(title="StockSentinel", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="StockSentinel", version="0.3.0-quant-mvp", lifespan=lifespan)
+
+# 量化引擎 API 路由（/api/quant/*）
+app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -256,5 +262,7 @@ elif static_dir.exists():
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

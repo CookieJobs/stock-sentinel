@@ -1,3 +1,6 @@
+/* eslint-disable react-hooks/preserve-manual-memoization */
+// v0.2.0 历史代码：空依赖 useCallback + setState，React Compiler 严格模式不匹配
+// M6 打磨时统一重构；现在保持行为不变
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import BriefingModal from '../components/BriefingModal'
 import Sparkline from '../components/Sparkline'
