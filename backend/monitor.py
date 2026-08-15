@@ -239,6 +239,10 @@ class StockMonitor:
         if not data:
             return None
 
+        # 禁止 demo 假数据覆盖数据库（仅刷新场景，新增股票不受影响）
+        if data.get("source") == "demo":
+            return data
+
         db = get_db()
         try:
             db.execute(

@@ -11,9 +11,45 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# 确保日志能输出到文件，方便诊断 API 问题
+if not logger.handlers:
+    _log_file = os.path.join(os.path.dirname(__file__), "data_fetcher.log")
+    _fh = logging.FileHandler(_log_file)
+    _fh.setLevel(logging.DEBUG)
+    _fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    logger.addHandler(_fh)
+    logger.setLevel(logging.DEBUG)
+
 FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
-EASTMONEY_QUOTE_URL = "https://push2.eastmoney.com/api/qt/stock/get"
-EASTMONEY_KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+# 东财用 http 而非 https：本机/运行环境对 push2/push2his 的 TLS 握手被重置
+# （RemoteDisconnected），http 是实测可通的 workaround。
+# ⚠️ 安全债：行情数据明文传输，待环境 TLS 问题查证后应改回 https（见 CHANGELOG 2026-08-15）。
+EASTMONEY_QUOTE_URL = "http://push2.eastmoney.com/api/qt/stock/get"
+EASTMONEY_KLINE_URL = "http://push2his.eastmoney.com/api/qt/stock/kline/get"
+
+# 股票名称静态映射（API 兜底）
+_NAME_MAP = {
+    # A 股
+    "000001": "平安银行", "000333": "美的集团", "000568": "泸州老窖",
+    "000725": "京东方A", "000858": "五粮液", "002415": "海康威视",
+    "002594": "比亚迪", "002714": "牧原股份", "300750": "宁德时代",
+    "300760": "迈瑞医疗", "600030": "中信证券", "600036": "招商银行",
+    "600276": "恒瑞医药", "600519": "贵州茅台", "600809": "山西汾酒",
+    "600887": "伊利股份", "600900": "长江电力", "601012": "隆基绿能",
+    "601318": "中国平安", "601888": "中国中免",
+    # 港股
+    "00005": "汇丰控股", "00020": "商汤-W", "00100": "MINIMAX-W",
+    "00388": "香港交易所", "00700": "腾讯控股", "00941": "中国移动",
+    "01024": "快手-W", "01211": "比亚迪股份", "01299": "友邦保险",
+    "01810": "小米集团-W", "01818": "招金矿业", "02015": "理想汽车-W",
+    "02269": "药明生物", "02318": "中国平安", "03690": "美团-W",
+    "09618": "京东集团-SW", "09626": "哔哩哔哩-W", "09633": "农夫山泉",
+    "09888": "百度集团-SW", "09988": "阿里巴巴-SW", "09999": "网易-S",
+}
+
+# 显式禁用代理的全局 session，防止系统代理干扰 API 调用
+_SESSION = requests.Session()
+_SESSION.trust_env = False
 
 # 行业板块静态映射（API 兜底）
 _SECTOR_MAP = {
@@ -60,7 +96,7 @@ DEMO_DATA: Dict[str, Dict[str, Any]] = {
                "name": "宁德时代", "pe_ratio": 25.2, "market": "CN"},
     "01810": {"current_price": 31.12, "week52_high": 61.45, "week52_low": 28.80,
               "name": "小米集团-W", "pe_ratio": 18.31, "market": "HK"},
-    "00100": {"current_price": 820.50, "week52_high": 1330.00, "week52_low": 220.00,
+    "00100": {"current_price": 708.00, "week52_high": 1330.00, "week52_low": 220.00,
               "name": "MINIMAX-W", "pe_ratio": 108.58, "market": "HK"},
     "00700": {"current_price": 485.00, "week52_high": 580.00, "week52_low": 340.00,
               "name": "腾讯控股", "pe_ratio": 22.5, "market": "HK"},
@@ -161,6 +197,7 @@ class DataFetcher:
 
         # ── 回退: 演示数据 ──
         if not result and clean in DEMO_DATA:
+            logger.info("Falling back to DEMO_DATA for %s (market=%s, API returned no data)", clean, market)
             demo = dict(DEMO_DATA[clean])
             base_price = demo.get("current_price", 0)
             dynamic_price = DataFetcher._dynamic_demo_price(clean, base_price)
@@ -200,7 +237,7 @@ class DataFetcher:
         """
         try:
             # 1. 实时报价
-            resp = requests.get(
+            resp = _SESSION.get(
                 f"{FINNHUB_BASE_URL}/quote",
                 params={"symbol": ticker, "token": api_key},
                 timeout=10,
@@ -221,7 +258,7 @@ class DataFetcher:
             week52_low_date = None
             pe_ratio = None
             try:
-                resp2 = requests.get(
+                resp2 = _SESSION.get(
                     f"{FINNHUB_BASE_URL}/stock/metric",
                     params={"symbol": ticker, "metric": "all", "token": api_key},
                     timeout=10,
@@ -240,7 +277,7 @@ class DataFetcher:
             name = ticker
             sector = None
             try:
-                resp3 = requests.get(
+                resp3 = _SESSION.get(
                     f"{FINNHUB_BASE_URL}/stock/profile2",
                     params={"symbol": ticker, "token": api_key},
                     timeout=10,
@@ -300,7 +337,7 @@ class DataFetcher:
                 secid = f"0.{ticker}"
 
             # ── 实时报价 ──
-            resp = requests.get(
+            resp = _SESSION.get(
                 EASTMONEY_QUOTE_URL,
                 params={
                     "secid": secid,
@@ -324,8 +361,8 @@ class DataFetcher:
             current_price = current / 100
             change_pct_raw = data.get("f170")
             change_pct = (change_pct_raw / 100) if change_pct_raw is not None else None
-            # f58 是名称, f57 是代码（备用回退）
-            name = data.get("f58") or data.get("f57") or ticker
+            # f58 是名称, f57 是代码（备用回退）, 最后用静态映射兜底
+            name = data.get("f58") or data.get("f57") or _NAME_MAP.get(ticker, ticker)
             pe_raw = data.get("f162")
             pe_ratio = (pe_raw / 100) if pe_raw is not None and pe_raw != "-" else None
 
@@ -336,7 +373,7 @@ class DataFetcher:
             week52_low_date = None
 
             try:
-                kresp = requests.get(
+                kresp = _SESSION.get(
                     EASTMONEY_KLINE_URL,
                     params={
                         "secid": secid,
@@ -418,24 +455,11 @@ class DataFetcher:
         fltt=2 → 价格已正确缩放（无需 /100）
         fqt=1 → 前复权（与 A 股一致，保证 52 周高低点可比）
         """
-        def _retry_get(url: str, params: dict, timeout: int, max_retries: int = 2) -> Optional[requests.Response]:
-            """带短暂等待的重试 GET"""
-            for attempt in range(max_retries):
-                try:
-                    resp = requests.get(url, params=params, timeout=timeout,
-                                        headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"})
-                    if resp.status_code == 200:
-                        return resp
-                except Exception:
-                    if attempt < max_retries - 1:
-                        time.sleep(0.3)
-            return None
-
         try:
             secid = DataFetcher._hk_secid(ticker)
 
             # ── 实时报价 ──
-            resp = _retry_get(
+            resp = _SESSION.get(
                 EASTMONEY_QUOTE_URL,
                 params={
                     "secid": secid,
@@ -444,11 +468,16 @@ class DataFetcher:
                     "fltt": "2",
                 },
                 timeout=10,
+                headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
             )
-            if not resp or resp.status_code != 200:
+            if resp.status_code != 200:
+                logger.warning("HK quote fetch failed for %s (secid=%s): HTTP %s",
+                               ticker, secid, resp.status_code)
                 return None
             data = resp.json().get("data")
             if not data:
+                logger.warning("HK quote empty data for %s (secid=%s): raw=%s",
+                               ticker, secid, str(resp.json())[:200])
                 return None
 
             # fltt=2: f43 价格无需缩放, f170 涨跌幅已正确
@@ -456,8 +485,9 @@ class DataFetcher:
             if current_price is None:
                 return None
             change_pct = data.get("f170")
-            # f58 是名称, f57 是代码（备用回退）
-            name = data.get("f58") or data.get("f57", ticker)
+            # f58 是名称, f57 是代码（备用回退）, 最后用静态映射兜底
+            api_name = data.get("f58") or data.get("f57") or ""
+            name = api_name if api_name else _NAME_MAP.get(ticker, ticker)
             # PE: 港股优先 f162（同 A 股），备用 f173
             pe_raw = data.get("f162") or data.get("f173")
             pe_ratio = pe_raw if (pe_raw is not None and pe_raw != "-") else None
@@ -469,7 +499,7 @@ class DataFetcher:
             week52_low_date = None
 
             try:
-                kresp = _retry_get(
+                kresp = _SESSION.get(
                     EASTMONEY_KLINE_URL,
                     params={
                         "secid": secid,
@@ -481,6 +511,7 @@ class DataFetcher:
                         "lmt": "300",
                     },
                     timeout=15,
+                    headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
                 )
                 if kresp and kresp.status_code == 200:
                     kdata = kresp.json().get("data")
