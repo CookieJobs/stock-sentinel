@@ -86,7 +86,7 @@ demo 回退数据**不落库**（与 `monitor.py` 已有"demo 不覆盖真实数
 - [x] `01-price-history-backend.md` — 后端落库（表 + 采样 + 桶 + 清理 + 测试）
 - [x] `02-price-history-api.md` — 历史行情查询 API
 - [x] `03-price-history-sparkline.md` — 前端回撤趋势 sparkline
-- [ ] 简报内嵌趋势图（下一迭代）
+- [x] 简报内嵌趋势图（下一迭代）
 
 ## Further Notes
 

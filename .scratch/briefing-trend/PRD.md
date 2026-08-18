@@ -48,3 +48,7 @@ Date: 2026-08-18
 
 - 趋势依赖 `price_history` 采样积累；新部署初期可能点数不足 → 前端不渲染该小节（无感降级）。
 - `stats` 已含完整 ctx（市场分布/回撤 Top/超阈值/异动/对比），趋势只是增量字段，向后兼容。
+
+## Todo
+
+- [x] `01-briefing-trend-chart.md` — 后端 stats.trends + 前端 sparkline 渲染

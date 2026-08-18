@@ -1,6 +1,6 @@
 # Issue 01: 简报内嵌回撤趋势图
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 
@@ -18,3 +18,7 @@ Status: ready-for-agent
 ## Blocked by
 
 None - can start immediately
+
+## Comments
+
+- 2026-08-18：完成（commit dee9fa7 后端 + 291d943 前端）。`BriefingGenerator._load_trends` 读 price_history 回撤序列写入 `stats.trends`（不进 LLM 上下文）；BriefingModal 渲染「📉 回撤趋势」sparkline。`test_briefing.py` 6/6 通过，lint + build 通过。
