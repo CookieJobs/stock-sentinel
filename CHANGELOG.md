@@ -2,6 +2,25 @@
 
 AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加条目。
 
+## 2026-08-18 — 清理 + 简报趋势图 + 东财连通性根因
+
+- **A 数据清理**：备份 `data/sentinel.db`（`.bak` 已加 `.gitignore`）后，清空量化测试写入真实库的残留
+  —— `portfolios` 64 / `portfolio_holdings` 142 / `factor_values` 23118 / `daily_metrics` 9396（全是
+  pytest 的 Mock 因子刷新与组合 CRUD 产物，无真实使用痕迹），VACUUM 后库从 5.12MB 缩到 929KB；
+  v0.2.0 真实数据（stocks/alerts/briefings/price_history/snapshots）原样保留。
+- **B 简报内嵌回撤趋势图**（`.scratch/briefing-trend/`）：后端 `BriefingGenerator._load_trends` 读
+  `price_history` 近 30 天回撤序列写入 `briefings.stats.trends`（不进 LLM 上下文省 token，以简报日期为
+  窗口基准）；前端 `BriefingModal` 复用 `Sparkline` 渲染「📉 回撤趋势」小节（恶化标红/改善标绿，无数据不出现）。
+- **C 东财连通性根因**（`.scratch/eastmoney-proxy/PRD.md`，ready-for-human）：本机 Clash Party（mihomo）
+  TUN/fake-IP 模式把 `push2.eastmoney.com`/`push2his` 解析到 198.18.0.x 假 IP，代理路由规则损坏导致
+  https 重置/http 502；`data_fetcher.py` 的 http 降级是治标 workaround。修复方向：Clash 加
+  `DOMAIN-SUFFIX,eastmoney.com,DIRECT` 规则，修好后 URL 可回 https。
+- 提交：`a0ab7e1`(fix 数据源遗留改动入库) / `dee9fa7`+`291d943`(feat 简报趋势图) / `bafee18`+`e1718e8`(chore/docs)。
+- 验证：`test_briefing.py` 6/6（含新增趋势用例）、`test_price_history.py` 6/6、`test_data_fetcher.py` ALL PASSED；
+  pytest 137 passed；前端 lint + build 通过。
+- 未决：并行会话的 `backend/tests/quant_engine/conftest.py`（临时 DB 隔离）+ `test_api.py`（test_db_isolation）
+  尚未合入（非本 session 产物，未动）；Clash 东财规则需人工改（见 C）；东财 http 安全债待规则修好后回 https。
+
 ## 2026-08-15 — 与 GitHub 合并：量化分析平台（v1.0）入库
 
 - 同步远端 20 个提交：合并 `origin/main`（本地 +10 提交、远端 +20 提交，分叉点 2026-05-16）。
