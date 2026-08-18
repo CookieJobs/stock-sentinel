@@ -1,6 +1,23 @@
 import { useState, useEffect, useCallback } from 'react'
+import Sparkline from './Sparkline'
 
 const API_BASE = '/api'
+
+/** 解析简报 stats（JSON 字符串 → 对象），失败返回空对象 */
+function parseStats(briefing) {
+  if (!briefing?.stats) return {}
+  try {
+    return typeof briefing.stats === 'string' ? JSON.parse(briefing.stats) : briefing.stats
+  } catch {
+    return {}
+  }
+}
+
+/** 回撤趋势方向：末点比首点更深 → 恶化（红），否则改善（绿） */
+function trendStatus(points) {
+  if (!points || points.length < 2) return 'unknown'
+  return points[points.length - 1] < points[0] ? 'alert' : 'normal'
+}
 
 /** 轻量 markdown 渲染：支持 #/##/### 标题、- 列表、**加粗**、段落 */
 function renderMarkdown(content) {
@@ -159,7 +176,27 @@ export default function BriefingModal({ onClose }) {
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-sent-blue border-t-transparent" />
             </div>
           ) : briefing ? (
-            <div className="space-y-1">{renderMarkdown(briefing.content)}</div>
+            <div className="space-y-1">
+              {renderMarkdown(briefing.content)}
+              {(() => {
+                const trends = parseStats(briefing).trends
+                if (!trends || trends.length === 0) return null
+                return (
+                  <div className="mt-4 pt-3 border-t border-sent-border">
+                    <h3 className="text-base font-bold text-white mb-2">📉 回撤趋势（近 30 天）</h3>
+                    <div className="space-y-2">
+                      {trends.map((t) => (
+                        <div key={t.ticker} className="flex items-center gap-3">
+                          <span className="text-xs font-mono text-white w-20 shrink-0">{t.ticker}</span>
+                          <span className="text-xs text-sent-dim w-24 truncate shrink-0">{t.name || ''}</span>
+                          <Sparkline points={t.points} status={trendStatus(t.points)} width={150} height={30} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
           ) : (
             <div className="text-center py-16 text-sent-dim">
               <div className="text-3xl mb-3">📭</div>
