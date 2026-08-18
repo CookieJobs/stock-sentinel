@@ -133,6 +133,40 @@ def test_scheduler_check_runs_without_error():
     assert has_briefing_on(today_beijing()) is True
 
 
+def test_trends_in_stats():
+    """简报 stats 含 trends：top 回撤股票的 price_history 序列（点数<2 过滤）"""
+    import json
+    from briefing import BriefingGenerator
+    g = BriefingGenerator()
+    _init_db()
+    _insert_stock()  # AAPL drawdown -25
+    _insert_stock(ticker="0700", name="Tencent", market="HK", drawdown=-30.0,
+                  current_price=400.0, week52_high=500.0, change_pct=1.2, threshold=-20.0)
+
+    # 只给 AAPL 插 3 个历史点；0700 无历史点 → 应被过滤
+    db = database.get_db()
+    try:
+        for i, dd in enumerate([-20.0, -23.0, -25.0]):
+            db.execute(
+                """INSERT OR REPLACE INTO price_history
+                   (ticker, market, name, bucket, current_price, drawdown, week52_high, captured_at)
+                   VALUES ('AAPL','US','Apple Inc',?, 200.0, ?, 266.0, ?)""",
+                (f"2026-01-0{i+1} 10:00", dd, f"2026-01-0{i+1}T10:00:00+08:00"),
+            )
+        db.commit()
+    finally:
+        db.close()
+
+    result = g.generate("2026-01-10")
+    stats = json.loads(result["briefing"]["stats"])
+    assert "trends" in stats
+    tickers = [t["ticker"] for t in stats["trends"]]
+    assert "AAPL" in tickers and "0700" not in tickers
+    aapl = [t for t in stats["trends"] if t["ticker"] == "AAPL"][0]
+    assert aapl["points"] == [-20.0, -23.0, -25.0]
+    assert aapl["market"] == "US"
+
+
 if __name__ == "__main__":
     tests = [
         test_collect_snapshot_idempotent,
@@ -140,6 +174,7 @@ if __name__ == "__main__":
         test_llm_fallback_no_key,
         test_api_flow,
         test_scheduler_check_runs_without_error,
+        test_trends_in_stats,
     ]
     passed = 0
     for fn in tests:

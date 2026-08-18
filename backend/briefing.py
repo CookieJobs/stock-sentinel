@@ -128,6 +128,36 @@ class BriefingGenerator:
         finally:
             db.close()
 
+    def _load_trends(self, tickers: List[str], date: str, days: int = 30) -> List[dict]:
+        """读取 price_history 回撤序列，供简报前端渲染 sparkline（点数不足 2 的过滤）"""
+        if not tickers:
+            return []
+        date_dt = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=_BJ)
+        cutoff = (date_dt - timedelta(days=days)).isoformat()
+        ph = ",".join("?" * len(tickers))
+        db = get_db()
+        try:
+            rows = db.execute(
+                f"""SELECT ticker, name, market, drawdown
+                    FROM price_history
+                    WHERE ticker IN ({ph}) AND captured_at >= ?
+                    ORDER BY ticker, bucket ASC""",
+                (*tickers, cutoff),
+            ).fetchall()
+        finally:
+            db.close()
+        by_ticker: Dict[str, dict] = {}
+        for r in rows:
+            d = by_ticker.setdefault(r["ticker"], {
+                "ticker": r["ticker"], "name": r["name"], "market": r["market"], "points": [],
+            })
+            if r["drawdown"] is not None:
+                d["points"].append(r["drawdown"])
+        order = {t: i for i, t in enumerate(tickers)}
+        trends = [d for d in by_ticker.values() if len(d["points"]) >= 2]
+        trends.sort(key=lambda d: order.get(d["ticker"], 999))
+        return trends
+
     def build_context(self, date: str, prev: Optional[Dict[str, dict]], prev_date: Optional[str] = None) -> Dict[str, Any]:
         """组装简报所需的全部结构化数据"""
         db = get_db()
@@ -310,6 +340,9 @@ class BriefingGenerator:
         prev_date, prev = self.load_previous_snapshot(date)
         ctx = self.build_context(date, prev, prev_date)
 
+        # 回撤趋势（只进 stats 供前端渲染，不进 LLM 上下文省 token）
+        trends = self._load_trends([s["ticker"] for s in ctx["top_drawdowns"]], date, days=30)
+
         mode = "template"
         content = self.generate_template(ctx)
 
@@ -336,12 +369,13 @@ class BriefingGenerator:
                 logger.info("LLM unavailable, using template mode for %s", date)
 
         title = f"📰 StockSentinel 每日简报（{date}）"
+        stats = {**ctx, "trends": trends}
         db = get_db()
         try:
             db.execute(
                 """INSERT OR REPLACE INTO briefings (briefing_date, title, content, mode, stats)
                    VALUES (?, ?, ?, ?, ?)""",
-                (date, title, content, mode, json.dumps(ctx, ensure_ascii=False)),
+                (date, title, content, mode, json.dumps(stats, ensure_ascii=False)),
             )
             db.commit()
             row = db.execute(
