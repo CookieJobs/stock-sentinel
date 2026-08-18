@@ -61,6 +61,7 @@ data/*.json
 
 # Misc
 *.log
+*.bak
 .SANDBOX_TEST
 test_write.txt
 # Mavis / Claude Code 工作区
