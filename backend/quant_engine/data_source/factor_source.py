@@ -93,7 +93,11 @@ class AkShareFactorSource(FactorSourceBase):
 
 
 class TushareFactorSource(FactorSourceBase):
-    """Tushare Pro 财务数据（需 TUSHARE_TOKEN 环境变量）"""
+    """Tushare Pro 财务数据（需 TUSHARE_TOKEN 环境变量）
+
+    stock_basic 免费档限 1 次/小时：首次成功后缓存到 ts_universe_cache，
+    限流/网络失败时回退缓存（股票列表低频变化，缓存语义成立）。
+    """
 
     name = "tushare"
 
@@ -106,41 +110,141 @@ class TushareFactorSource(FactorSourceBase):
         self.pro = ts.pro_api()
 
     def get_universe(self) -> pd.DataFrame:
-        # 拉全 A 股基础信息（含行业）
-        df_basic = self.pro.stock_basic(list_status="L",
-                                        fields="ts_code,name,industry,market,exchange,list_date")
-        # 简化：ticker 用 ts_code 的数字部分
-        df_basic["ticker"] = df_basic["ts_code"].str.split(".").str[0]
-        df_basic["market"] = "CN"
-        df_basic = df_basic.rename(columns={"industry": "industry"})
+        # 拉全 A 股基础信息（含行业）；失败回退本地缓存
+        df_basic = None
+        try:
+            df_basic = self.pro.stock_basic(list_status="L",
+                                            fields="ts_code,name,industry,market,exchange,list_date")
+            if df_basic is not None and not df_basic.empty:
+                df_basic["ticker"] = df_basic["ts_code"].str.split(".").str[0]
+                df_basic["market"] = "CN"
+                self._cache_universe(df_basic)
+        except Exception as e:
+            logger.warning("stock_basic failed (%s), fallback to cached universe", e)
+        if df_basic is None or df_basic.empty:
+            df_basic = self._load_cached_universe()
+        if df_basic is None or df_basic.empty:
+            return pd.DataFrame()
 
-        # 拉最新一天的 daily_basic（含 PE/PB/换手率/市值等）
+        # 拉最新一天的 daily_basic（含 PE/PB/换手率/市值等）；限流/失败回退本地缓存
         today = pd.Timestamp.now().strftime("%Y%m%d")
-        df_daily = self.pro.daily_basic(trade_date=today)
+        df_daily = None
+        try:
+            df_daily = self.pro.daily_basic(trade_date=today)
+            if df_daily is not None and not df_daily.empty:
+                self._cache_daily(df_daily, today)
+        except Exception as e:
+            logger.warning("daily_basic failed (%s), fallback to cached daily metrics", e)
         if df_daily is None or df_daily.empty:
-            # fallback 到最近一个有数据的日期
-            df_cal = self.pro.trade_cal(exchange="SSE", is_open="1",
-                                        start_date=(pd.Timestamp.now() - pd.Timedelta(days=7)).strftime("%Y%m%d"),
-                                        end_date=today)
-            if df_cal is not None and not df_cal.empty:
-                last_date = df_cal["cal_date"].iloc[-1]
-                df_daily = self.pro.daily_basic(trade_date=last_date)
+            df_daily = self._load_cached_daily()
 
         if df_daily is None or df_daily.empty:
             return df_basic
 
-        df_daily["ticker"] = df_daily["ts_code"].str.split(".").str[0]
-        rename = {
-            "pe_ttm": "pe_ttm", "pb": "pb", "ps_ttm": "ps_ttm",
-            "total_mv": "market_cap", "circ_mv": "float_cap",
-            "turnover_rate": "turnover_rate", "pct_chg": "change_pct",
-        }
-        df_daily = df_daily.rename(columns=rename)
+        if "ts_code" in df_daily.columns:
+            df_daily["ticker"] = df_daily["ts_code"].str.split(".").str[0]
+            df_daily = df_daily.rename(columns={
+                "pe_ttm": "pe_ttm", "pb": "pb", "ps_ttm": "ps_ttm",
+                "total_mv": "market_cap", "circ_mv": "float_cap",
+                "turnover_rate": "turnover_rate", "pct_chg": "change_pct",
+            })
         # 合并
         df = df_basic.merge(df_daily, on="ticker", how="left", suffixes=("", "_dup"))
         keep = ["ticker", "name", "industry", "market", "pe_ttm", "pb", "ps_ttm",
                 "market_cap", "float_cap", "turnover_rate", "change_pct"]
         return df[[c for c in keep if c in df.columns]].reset_index(drop=True)
+
+    # ── 股票列表缓存 ──────────────────────────────────────────
+
+    def _cache_universe(self, df_basic: pd.DataFrame) -> None:
+        """stock_basic 结果落缓存（全量替换，供限流时回退）"""
+        from ..db import get_quant_db
+        from datetime import datetime
+        now = datetime.now().isoformat()
+        rows = [
+            (str(r["ts_code"]).split(".")[0], r.get("name"), r.get("industry"),
+             r.get("market"), r.get("exchange"), r.get("list_date"), now)
+            for _, r in df_basic.iterrows()
+        ]
+        db = get_quant_db()
+        try:
+            db.execute("DELETE FROM ts_universe_cache")
+            db.executemany(
+                """INSERT OR REPLACE INTO ts_universe_cache
+                   (ticker, name, industry, market, exchange, list_date, fetched_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                rows,
+            )
+            db.commit()
+            logger.info("Cached %d universe rows from stock_basic", len(rows))
+        finally:
+            db.close()
+
+    def _load_cached_universe(self) -> Optional[pd.DataFrame]:
+        """从缓存加载股票列表；无缓存返回 None"""
+        from ..db import get_quant_db
+        db = get_quant_db()
+        try:
+            rows = db.execute(
+                "SELECT ticker, name, industry, market, exchange, list_date "
+                "FROM ts_universe_cache"
+            ).fetchall()
+        finally:
+            db.close()
+        if not rows:
+            return None
+        df = pd.DataFrame([dict(r) for r in rows])
+        df["market"] = "CN"
+        logger.info("Loaded %d universe rows from cache", len(df))
+        return df
+
+    def _cache_daily(self, df_daily: pd.DataFrame, trade_date: str) -> None:
+        """daily_basic 结果落缓存（按 trade_date 全量替换该日）"""
+        from ..db import get_quant_db
+        from datetime import datetime
+        now = datetime.now().isoformat()
+        rows = [
+            (str(r["ts_code"]).split(".")[0], trade_date,
+             r.get("pe_ttm"), r.get("pb"), r.get("ps_ttm"),
+             r.get("total_mv"), r.get("circ_mv"),
+             r.get("turnover_rate"), r.get("pct_chg"), now)
+            for _, r in df_daily.iterrows()
+        ]
+        db = get_quant_db()
+        try:
+            db.execute("DELETE FROM ts_daily_cache WHERE trade_date = ?", (trade_date,))
+            db.executemany(
+                """INSERT OR REPLACE INTO ts_daily_cache
+                   (ticker, trade_date, pe_ttm, pb, ps_ttm, total_mv, circ_mv, turnover_rate, pct_chg, fetched_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                rows,
+            )
+            db.commit()
+            logger.info("Cached %d daily_basic rows for %s", len(rows), trade_date)
+        finally:
+            db.close()
+
+    def _load_cached_daily(self) -> Optional[pd.DataFrame]:
+        """从缓存加载最近一个交易日的 daily_basic；无缓存返回 None"""
+        from ..db import get_quant_db
+        db = get_quant_db()
+        try:
+            row = db.execute("SELECT MAX(trade_date) d FROM ts_daily_cache").fetchone()
+            if not row or not row["d"]:
+                return None
+            rows = db.execute(
+                "SELECT ticker, pe_ttm, pb, ps_ttm, total_mv, circ_mv, turnover_rate, pct_chg "
+                "FROM ts_daily_cache WHERE trade_date = ?", (row["d"],)
+            ).fetchall()
+        finally:
+            db.close()
+        if not rows:
+            return None
+        df = pd.DataFrame([dict(r) for r in rows])
+        df = df.rename(columns={"total_mv": "market_cap", "circ_mv": "float_cap",
+                                "pct_chg": "change_pct"})
+        logger.info("Loaded %d daily_basic rows from cache (date=%s)", len(df), row["d"])
+        return df
 
 
 class MockFactorSource(FactorSourceBase):

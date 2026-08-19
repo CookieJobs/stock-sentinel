@@ -123,6 +123,28 @@ SCHEMA = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_backtests_status ON backtests(status, created_at DESC)",
+
+    # Tushare 股票列表缓存（stock_basic 免费档 1 次/小时，缓存避免高频刷新撞限流）
+    """
+    CREATE TABLE IF NOT EXISTS ts_universe_cache (
+        ticker TEXT PRIMARY KEY,
+        name TEXT, industry TEXT, market TEXT, exchange TEXT, list_date TEXT,
+        fetched_at TEXT
+    )
+    """,
+
+    # Tushare daily_basic 缓存（免费档 1 次/小时；同一交易日数据不变，限流时复用）
+    """
+    CREATE TABLE IF NOT EXISTS ts_daily_cache (
+        ticker TEXT NOT NULL,
+        trade_date TEXT NOT NULL,
+        pe_ttm REAL, pb REAL, ps_ttm REAL,
+        total_mv REAL, circ_mv REAL, turnover_rate REAL, pct_chg REAL,
+        fetched_at TEXT,
+        UNIQUE(ticker, trade_date)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_ts_daily_cache ON ts_daily_cache(trade_date)",
 ]
 
 
