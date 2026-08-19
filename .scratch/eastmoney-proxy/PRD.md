@@ -40,3 +40,15 @@ Date: 2026-08-18
 
 - 代理规则修好后，可将 `backend/data_fetcher.py` 的东财 URL 改回 https（消掉安全债）。
 - 本 issue 完成前，代码保持 http workaround 不动。
+
+## 测试更新（2026-08-19，用户改 Clash 规则后）
+
+1. DNS 已恢复真实 IP（`push2` → 101.226.x、`push2his` → 14.103.x/117.184.x，不再 198.18.x）——**DIRECT 规则生效**。
+2. 但 `push2`/`push2his` 的 http 与 https 请求仍被服务端在 0.15–2s 内 `RemoteDisconnected` 秒断，不给响应；
+   `data_fetcher` 仍回退 demo。
+3. 对照：腾讯 `qt.gtimg.cn`、新浪 `hq.sinajs.cn`、东财 `datacenter-web.eastmoney.com` 均 200 正常。
+   → **问题精确锁定在 push2/push2his 两个实时行情接口本身**（疑似 TLS 指纹 / 缺失会话 token / IP 风控），
+   并非网络或 Clash。Clash 规则是必要修复，但非充分。
+4. 下一步方向：改用东财备用行情域名（如 `push2delay.eastmoney.com`）或腾讯/新浪行情作为 CN/HK 实时源，
+   或研究 push2 所需的确切请求参数/`ut` token（当前硬编码公共 token 已无效）。
+
