@@ -161,6 +161,58 @@ SCHEMA = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_quant_events ON quant_events(event_date)",
+
+    # 模拟交易（Paper Trading）：组合 / 持仓 / 成交 / 净值
+    """
+    CREATE TABLE IF NOT EXISTS paper_portfolios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        initial_capital REAL NOT NULL DEFAULT 100000,
+        cash REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',   -- active / closed
+        created_at TEXT DEFAULT (datetime('now'))
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS paper_positions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        portfolio_id INTEGER NOT NULL,
+        ticker TEXT NOT NULL,
+        market TEXT NOT NULL DEFAULT 'CN',
+        qty REAL NOT NULL,
+        avg_cost REAL NOT NULL,
+        FOREIGN KEY(portfolio_id) REFERENCES paper_portfolios(id) ON DELETE CASCADE,
+        UNIQUE(portfolio_id, ticker)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_paper_positions ON paper_positions(portfolio_id)",
+    """
+    CREATE TABLE IF NOT EXISTS paper_trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        portfolio_id INTEGER NOT NULL,
+        trade_date TEXT NOT NULL,
+        ticker TEXT NOT NULL,
+        side TEXT NOT NULL,                -- buy / sell
+        price REAL NOT NULL,
+        qty REAL NOT NULL,
+        amount REAL NOT NULL,
+        realized_pnl REAL,                 -- 卖出时计入
+        FOREIGN KEY(portfolio_id) REFERENCES paper_portfolios(id) ON DELETE CASCADE
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_paper_trades ON paper_trades(portfolio_id)",
+    """
+    CREATE TABLE IF NOT EXISTS paper_equity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        portfolio_id INTEGER NOT NULL,
+        equity_date TEXT NOT NULL,
+        equity_value REAL NOT NULL,
+        cash REAL NOT NULL,
+        positions_value REAL NOT NULL,
+        UNIQUE(portfolio_id, equity_date)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_paper_equity ON paper_equity(portfolio_id, equity_date)",
 ]
 
 
