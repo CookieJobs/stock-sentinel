@@ -145,6 +145,22 @@ SCHEMA = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_ts_daily_cache ON ts_daily_cache(trade_date)",
+
+    # 事件日历（分红送转 / 限售解禁等，供「事件日历」页面）
+    """
+    CREATE TABLE IF NOT EXISTS quant_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_date TEXT NOT NULL,          -- 事件发生日 YYYY-MM-DD（除权日 / 解禁日）
+        ticker TEXT NOT NULL,
+        name TEXT,                         -- 股票名（可为空，前端回退显示 ticker）
+        event_type TEXT NOT NULL,          -- dividend / share_float / ...
+        title TEXT,                        -- 一句话摘要
+        detail TEXT,                       -- JSON 明细
+        updated_at TEXT,
+        UNIQUE(ticker, event_type, event_date)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_quant_events ON quant_events(event_date)",
 ]
 
 
