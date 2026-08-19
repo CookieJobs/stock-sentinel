@@ -111,8 +111,9 @@ backend/
   同时把真实行情写入 `price_history`（15 分钟桶幂等；demo 数据不落库）。
 - **`data_fetcher.py`** — `DataFetcher` 三市场数据管线：US 走 Finnhub（`/quote`、`/stock/metric`、
   `/stock/profile2`，需 `FINNHUB_API_KEY`）；CN 走东方财富 push2 实时 + K 线（52 周高低点由
-  最多 300 根周 K 计算，`fltt=1` 价格单位为分/100）；HK 走东方财富 `fltt=2`（价格已正确缩放，
-  secid 格式 `116.00xxx`）。API 失败或无 key 时回退内置 `DEMO_DATA`。`detect_market()`：
+  最多 300 根日 K 计算，`fltt=1` 价格单位为分/100）；HK 走东方财富 `fltt=2`（价格已正确缩放，
+  secid 格式 `116.00xxx`）。CN/HK 东财失败时自动降级腾讯行情（`qt.gtimg.cn` 实时 + `web.ifzq.gtimg.cn`
+  日 K 算 52 周高低点，`source=tencent`）。API 全失败或无 key 时回退内置 `DEMO_DATA`。`detect_market()`：
   6 位数字 → CN，1-5 位数字 → HK，`.HK` 后缀 → HK，其余 → US。
 - **`alerter.py`** — `StockAlerter` 后台线程（`ALERT_CHECK_INTERVAL`，默认 300s）：逐股检查
   回撤是否超阈值，按 ticker+日期经 `alert_history` 去重，未读告警存 `alert_unread`。

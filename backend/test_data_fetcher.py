@@ -50,6 +50,7 @@ _orig_fetch = {
     '_get_finnhub_quote': DataFetcher._get_finnhub_quote,
     '_get_eastmoney_quote': DataFetcher._get_eastmoney_quote,
     '_get_eastmoney_hk_quote': DataFetcher._get_eastmoney_hk_quote,
+    '_get_tencent_quote': DataFetcher._get_tencent_quote,
 }
 for _name in _orig_fetch:
     setattr(DataFetcher, _name, staticmethod(lambda *a, **k: None))
@@ -74,6 +75,36 @@ try:
 finally:
     for _name, _orig in _orig_fetch.items():
         setattr(DataFetcher, _name, _orig)
+
+# test _tencent_secid（纯函数：CN sh/sz 前缀，HK hk 前缀）
+assert DataFetcher._tencent_secid('600519', 'CN') == 'sh600519'
+assert DataFetcher._tencent_secid('000001', 'CN') == 'sz000001'
+assert DataFetcher._tencent_secid('300750', 'CN') == 'sz300750'
+assert DataFetcher._tencent_secid('00700', 'HK') == 'hk00700'
+assert DataFetcher._tencent_secid('1810', 'HK') == 'hk01810'
+print('_tencent_secid: PASS')
+
+# test 东财失败自动降级腾讯（确定性 mock：东财→None，腾讯→固定 dict）
+_orig_em = DataFetcher._get_eastmoney_quote
+_orig_emh = DataFetcher._get_eastmoney_hk_quote
+_orig_tq = DataFetcher._get_tencent_quote
+DataFetcher._get_eastmoney_quote = staticmethod(lambda *a, **k: None)
+DataFetcher._get_eastmoney_hk_quote = staticmethod(lambda *a, **k: None)
+DataFetcher._get_tencent_quote = staticmethod(
+    lambda ticker, market: {"ticker": ticker, "name": "X", "current_price": 100.0,
+                            "change_pct": 1.0, "drawdown": -10.0, "week52_high": 110.0,
+                            "week52_low": 90.0, "pe_ratio": 10.0, "source": "tencent"}
+)
+try:
+    cn = DataFetcher.get_stock_info('600519')
+    hk = DataFetcher.get_stock_info('00700')
+    assert cn['source'] == 'tencent' and cn['market'] == 'CN', cn
+    assert hk['source'] == 'tencent' and hk['market'] == 'HK', hk
+    print('Tencent fallback: PASS')
+finally:
+    DataFetcher._get_eastmoney_quote = _orig_em
+    DataFetcher._get_eastmoney_hk_quote = _orig_emh
+    DataFetcher._get_tencent_quote = _orig_tq
 
 # test all DEMO_DATA stocks have required keys
 from collections import Counter

@@ -119,6 +119,14 @@ DEMO_DATA: Dict[str, Dict[str, Any]] = {
 }
 
 
+def _to_float(v):
+    """安全转 float，失败返回 None"""
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return None
+
+
 class DataFetcher:
     """统一的数据获取接口 — 支持 US / CN / HK 三市场"""
 
@@ -176,10 +184,13 @@ class DataFetcher:
         # ── A 股 ──
         elif market == "CN":
             result = DataFetcher._get_eastmoney_quote(clean)
+            source = "eastmoney"
+            if not result:
+                result = DataFetcher._get_tencent_quote(clean, "CN")
+                source = "tencent"
             if result:
                 result["market"] = "CN"
-                result["source"] = "eastmoney"
-                source = "eastmoney"
+                result["source"] = source
                 sector = _SECTOR_MAP.get(clean)
                 if sector:
                     result["sector"] = sector
@@ -187,10 +198,13 @@ class DataFetcher:
         # ── 港股 ──
         elif market == "HK":
             result = DataFetcher._get_eastmoney_hk_quote(clean)
+            source = "eastmoney"
+            if not result:
+                result = DataFetcher._get_tencent_quote(clean, "HK")
+                source = "tencent"
             if result:
                 result["market"] = "HK"
-                result["source"] = "eastmoney"
-                source = "eastmoney"
+                result["source"] = source
                 sector = _SECTOR_MAP.get(clean)
                 if sector:
                     result["sector"] = sector
@@ -571,6 +585,105 @@ class DataFetcher:
         except Exception:
             logger.warning("EastMoney HK quote exception for %s", ticker, exc_info=True)
             return None
+
+    # ── 腾讯行情（CN/HK 降级源）───────────────────────────────
+
+    @staticmethod
+    def _tencent_secid(ticker: str, market: str) -> str:
+        """腾讯行情代码：CN → sh/sz + 6 位；HK → hk + 5 位"""
+        if market == "HK":
+            return "hk" + ticker.zfill(5)
+        prefix = "sh" if ticker[0] in ("6", "9") else "sz"
+        return prefix + ticker
+
+    @staticmethod
+    def _get_tencent_quote(ticker: str, market: str) -> Optional[Dict[str, Any]]:
+        """腾讯行情：实时报价（qt.gtimg.cn，GBK）+ 周 K 计算 52 周高低点"""
+        try:
+            secid = DataFetcher._tencent_secid(ticker, market)
+            resp = _SESSION.get(
+                f"https://qt.gtimg.cn/q={secid}",
+                timeout=10,
+                headers={"Referer": "https://gu.qq.com/", "User-Agent": "Mozilla/5.0"},
+            )
+            if resp.status_code != 200:
+                return None
+            text = resp.content.decode("gbk", errors="ignore")
+            if '="' not in text:
+                return None
+            parts = text.split('="', 1)[1].rstrip('";\n').split("~")
+            if len(parts) < 40:
+                return None
+            name = parts[1] or _NAME_MAP.get(ticker, ticker)
+            current_price = _to_float(parts[3])
+            if current_price is None:
+                return None
+            change_pct = _to_float(parts[32])
+            pe_ratio = _to_float(parts[39]) if market == "CN" else None
+
+            week52_high, week52_low, h_date, l_date = DataFetcher._get_tencent_kline_52w(secid)
+            drawdown = DataFetcher.calculate_drawdown(current_price, week52_high)
+            distance_low_pct = DataFetcher._calc_distance_low(current_price, week52_low)
+            now = datetime.now()
+
+            return {
+                "ticker": ticker,
+                "name": name,
+                "market": market,
+                "source": "tencent",
+                "current_price": current_price,
+                "change_pct": change_pct,
+                "week52_high": week52_high,
+                "week52_low": week52_low,
+                "week52_high_date": h_date,
+                "week52_low_date": l_date,
+                "drawdown": drawdown,
+                "distance_low_pct": distance_low_pct,
+                "pe_ratio": pe_ratio,
+                "market_status": DataFetcher.get_market_status(drawdown),
+                "last_updated": now.isoformat(),
+            }
+        except Exception:
+            logger.warning("Tencent quote exception for %s (%s)", ticker, market, exc_info=True)
+            return None
+
+    @staticmethod
+    def _get_tencent_kline_52w(secid: str) -> tuple:
+        """腾讯日 K 计算 52 周高低点（320 根日线 ≈ 1.2 年，对齐东财 klt=101/lmt=300），
+        返回 (high, low, high_date, low_date)"""
+        try:
+            resp = _SESSION.get(
+                "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
+                params={"param": f"{secid},day,,,320,qfq"},
+                timeout=12,
+                headers={"Referer": "https://gu.qq.com/", "User-Agent": "Mozilla/5.0"},
+            )
+            if resp.status_code != 200:
+                return None, None, None, None
+            data = resp.json().get("data", {}).get(secid, {})
+            bars = data.get("qfqday") or data.get("day") or []
+            max_high = -float("inf")
+            min_low = float("inf")
+            h_date = l_date = None
+            for b in bars:
+                if not isinstance(b, list) or len(b) < 5:
+                    continue
+                try:
+                    high = float(b[3])
+                    low = float(b[4])
+                    date = b[0]
+                except (ValueError, TypeError):
+                    continue
+                if high > max_high:
+                    max_high, h_date = high, date
+                if low < min_low:
+                    min_low, l_date = low, date
+            if max_high == -float("inf"):
+                return None, None, None, None
+            return max_high, min_low, h_date, l_date
+        except Exception:
+            logger.warning("Tencent weekly kline exception for %s", secid, exc_info=True)
+            return None, None, None, None
 
     # ── 工具方法 ──────────────────────────────────────────────
 
