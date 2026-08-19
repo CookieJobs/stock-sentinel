@@ -2,6 +2,20 @@
 
 AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加条目。
 
+## 2026-08-19 — CN/HK 行情多源降级（东财→腾讯）
+
+- 背景：东财 `push2/push2his` 实时行情接口被服务端秒断（见 `.scratch/eastmoney-proxy/PRD.md`），
+  行情长期回退 demo 假数据。
+- 新功能：`data_fetcher.py` 给 CN/HK 加腾讯行情源作降级——东财失败自动切腾讯
+  （`qt.gtimg.cn` 实时报价 GBK 解析 + `web.ifzq.gtimg.cn` 日 K 320 根算 52 周高低点），
+  都失败才回退 demo。`source` 字段区分 eastmoney/tencent/demo。
+- 修正：实现中曾误用腾讯周 K（会算出约 6 年高低点），改为日 K 对齐东财 ~1.2 年窗口。
+- 效果：实测 600519/000001/00700/01810 均 `source=tencent` 拿到真实行情；不再依赖 Clash 对
+  东财域名的规则，也基本免疫 push2 风控。
+- 测试：`test_data_fetcher.py` ALL PASSED（新增 `_tencent_secid` 纯函数 + 东财失败降级腾讯用例），
+  `test_briefing` 6/6、`test_price_history` 6/6。
+- 提交：`323215d`(feat) + `aac1f90`(docs 东财 issue 更新)。
+
 ## 2026-08-18 — 清理 + 简报趋势图 + 东财连通性根因
 
 - **A 数据清理**：备份 `data/sentinel.db`（`.bak` 已加 `.gitignore`）后，清空量化测试写入真实库的残留

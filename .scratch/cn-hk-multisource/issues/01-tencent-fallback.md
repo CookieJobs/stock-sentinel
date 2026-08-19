@@ -1,6 +1,6 @@
 # Issue 01: CN/HK 行情腾讯数据源 + 自动降级
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 
@@ -17,3 +17,9 @@ Status: ready-for-agent
 ## Blocked by
 
 None - can start immediately
+
+## Comments
+
+- 2026-08-19：完成（commit 323215d）。`_tencent_secid`/`_get_tencent_quote`/`_get_tencent_kline_52w` 上线，
+  CN/HK 东财失败自动切腾讯。实测 600519/000001/00700/01810 均 `source=tencent` 拿真实行情。
+  `test_data_fetcher` ALL PASSED（含 secid + 降级用例）。

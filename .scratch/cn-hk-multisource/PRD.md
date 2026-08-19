@@ -56,3 +56,7 @@ A股/港股实时行情**只依赖**东财 `push2/push2his.eastmoney.com`。实�
 - 腾讯报价 GBK 编码，需 `resp.content.decode('gbk', errors='ignore')`。
 - HK 腾讯周 K 的 bar 可能带分红除权信息（第 7 元素为 dict），解析时只取前 6 个标量。
 - 该改动让 v0.2.0 行情脱离对 push2 的单一依赖，与 `_NAME_MAP`/`_SECTOR_MAP` 兜底思路一致。
+
+## Todo
+
+- [x] `01-tencent-fallback.md` — 腾讯数据源 + 东财→腾讯自动降级
