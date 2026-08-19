@@ -9,6 +9,7 @@ import Screener from './pages/Screener'
 import Backtest from './pages/Backtest'
 import Portfolio from './pages/Portfolio'
 import Risk from './pages/Risk'
+import EventCalendar from './pages/EventCalendar'
 
 function NavItem({ to, label, icon }) {
   return (
@@ -47,6 +48,7 @@ function App() {
               <NavItem to="/backtest" label="回测" icon="⚡" />
               <NavItem to="/portfolio" label="组合" icon="💼" />
               <NavItem to="/risk" label="风险" icon="⚖️" />
+              <NavItem to="/events" label="事件" icon="🗓️" />
             </nav>
 
             <div className="ml-auto text-xs text-sent-dim">个人投研型量化分析平台</div>
@@ -60,6 +62,7 @@ function App() {
             <Route path="/backtest" element={<Backtest />} />
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/risk" element={<Risk />} />
+            <Route path="/events" element={<EventCalendar />} />
           </Routes>
         </main>
       </div>
