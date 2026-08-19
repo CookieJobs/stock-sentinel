@@ -35,6 +35,7 @@ const BENCHMARK_OPTIONS = [
 
 export default function Backtest() {
   const [strategies, setStrategies] = useState([])
+  const [templates, setTemplates] = useState([])
   const [history, setHistory] = useState([])
   const [form, setForm] = useState({
     name: '我的回测',
@@ -57,8 +58,21 @@ export default function Backtest() {
 
   useEffect(() => {
     backtestApi.strategies().then(d => setStrategies(d.strategies || []))
+    backtestApi.templates().then(d => setTemplates(d.templates || [])).catch(() => {})
     loadHistory()
   }, [])
+
+  function handleTemplate(t) {
+    setForm(prev => ({
+      ...prev,
+      name: `模板：${t.name}`,
+      strategy: t.strategy,
+      params: { ...t.params },
+      tickers: t.tickers.join(' '),
+      rebalance_freq: t.rebalance_freq || prev.rebalance_freq,
+    }))
+    setError('')
+  }
 
   function loadHistory() {
     backtestApi.listRecent(10).then(d => setHistory(d.backtests || [])).catch(() => {})
@@ -139,6 +153,27 @@ export default function Backtest() {
 
   return (
     <div className="space-y-4">
+      {/* 策略模板 */}
+      {templates.length > 0 && (
+        <div className="bg-sent-card border border-sent-border rounded-lg p-4">
+          <div className="text-xs text-sent-dim mb-2">🧩 策略模板（点击套用，可再调整）</div>
+          <div className="flex flex-wrap gap-2">
+            {templates.map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => handleTemplate(t)}
+                className="text-left px-3 py-2 rounded-lg border border-sent-border/60 bg-sent-bg/50 hover:border-sent-blue hover:bg-sent-blue/10 transition-colors"
+                title={t.description}
+              >
+                <div className="text-sm font-bold text-white">{t.name}</div>
+                <div className="text-xs text-sent-dim max-w-[220px] truncate">{t.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 提交表单 */}
       <form onSubmit={handleSubmit} className="bg-sent-card border border-sent-border rounded-lg p-6 space-y-4">
         <h2 className="text-lg font-bold text-white">📈 回测中心</h2>

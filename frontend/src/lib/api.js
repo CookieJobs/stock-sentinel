@@ -51,6 +51,7 @@ const del    = (path)               => request(path, { method: 'DELETE' })
 // ── Backtest（M4） ────────────────────────────────
 export const backtest = {
   strategies:    ()                              => get('/api/quant/backtest/strategies'),
+  templates:     ()                              => get('/api/quant/backtest/templates'),
   listRecent:    (limit = 20)                    => get('/api/quant/backtest/list/recent', { limit }),
   run:           (payload)                       => post('/api/quant/backtest/run', payload),
   get:           (id)                            => get(`/api/quant/backtest/${id}`),

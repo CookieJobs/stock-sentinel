@@ -29,6 +29,13 @@ def list_strategies():
     }
 
 
+@router.get("/templates")
+def list_templates():
+    """列出可复用策略模板（预配置的策略+参数+建议标的）"""
+    from ..strategy_templates import get_templates
+    return {"templates": get_templates()}
+
+
 @router.post("/run")
 def run_backtest(payload: dict):
     """提交回测任务（异步执行）"""
