@@ -7,6 +7,8 @@ AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加�
 - **Tushare 接入**（用户提供 token）：`TUSHARE_TOKEN` 已写入 `backend/.env`（gitignored，不入库）。
   因子管线新增**双级缓存**（`ts_universe_cache` / `ts_daily_cache`）——免费档 `stock_basic`/`daily_basic`
   限 1 次/小时，首次成功后落库、限流自动回退，避免刷新掉进 Mock 假数据。
+  ⚠️ 实测发现该档位完整限制为 **1次/分钟 + 1次/小时 + 5次/天**（失败的调用同样计入窗口）；
+  当日配额耗尽后须等北京时间次日 0 点重置。建议升级 200 积分（免费实名）解除瓶颈。
 - **事件日历**：Tushare 分红送转（除权日）+ 限售解禁（解禁日）→ `quant_events` 表；
   API `GET /api/quant/events` + `POST /refresh`；前端 `/events` 页（区间 + 类型筛选）。
 - **策略模板**：4 个预配置回测模板（低估值红利 / 双均线趋势 / 动量优选 / 等权一篮子），
