@@ -2,6 +2,26 @@
 
 AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加条目。
 
+## 2026-08-19 — Tushare 真数据接入 + 事件日历 + 策略模板 + 模拟交易
+
+- **Tushare 接入**（用户提供 token）：`TUSHARE_TOKEN` 已写入 `backend/.env`（gitignored，不入库）。
+  因子管线新增**双级缓存**（`ts_universe_cache` / `ts_daily_cache`）——免费档 `stock_basic`/`daily_basic`
+  限 1 次/小时，首次成功后落库、限流自动回退，避免刷新掉进 Mock 假数据。
+- **事件日历**：Tushare 分红送转（除权日）+ 限售解禁（解禁日）→ `quant_events` 表；
+  API `GET /api/quant/events` + `POST /refresh`；前端 `/events` 页（区间 + 类型筛选）。
+- **策略模板**：4 个预配置回测模板（低估值红利 / 双均线趋势 / 动量优选 / 等权一篮子），
+  回测页一键套用；API `GET /api/quant/backtest/templates`。
+- **模拟交易 Paper Trading**：真实行情成交的模拟组合（买卖/现金校验/实现盈亏/净值重估，
+  demo 假数据拒绝成交）；`/api/quant/paper` CRUD + trade + mark；前端 `/paper` 页。
+- 测试：`test_factor_source` 3/3、`test_events_service` 2/2、`test_strategy_templates` 3/3、
+  `test_paper_service` 3/3 全过；前端 lint + build 通过（产物同步）。
+- 提交：`0b77b79`(因子缓存) / `b0e151c`+`73d696d`(事件日历) / `89b1b8c`(策略模板) / `bd45b1a`(模拟交易)。
+- 未决（需人看）：
+  1. Tushare 积分档偏低——`stock_basic`/`daily_basic` 限 1 次/小时；`fina_indicator`/`income`/
+     `disclosure_date`/`forecast` 无权限（成长/质量因子、财报披露、业绩预告暂缺，升级积分可解锁）。
+  2. `LLM_API_KEY` 未配置——每日简报走模板模式；新闻归因（issue 03）依赖 LLM key。
+  3. 真实因子刷新已安排后台验证（配额重置后自动跑，结果待确认）。
+
 ## 2026-08-19 — CN/HK 行情多源降级（东财→腾讯）
 
 - 背景：东财 `push2/push2his` 实时行情接口被服务端秒断（见 `.scratch/eastmoney-proxy/PRD.md`），
