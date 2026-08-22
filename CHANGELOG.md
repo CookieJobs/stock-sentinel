@@ -2,6 +2,22 @@
 
 AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加条目。
 
+## 2026-08-20 — 东财延时因子源：真实因子数据全量落地（5552 只）
+
+- 调研发现 `push2delay.eastmoney.com`（延时 15 分钟）与 push2 同构但不被风控，
+  clist 提供全 A 股 PE(动)/PE-TTM/PB/ROE/换手率/市值/行业。
+- 新增 `EastMoneyDelayFactorSource` 接入降级链：Tushare → **东财延时** → BaoStock → AkShare → Mock。
+- 修复两处：
+  1. `refresh_universe` 只认「含因子列的 df」为源成功——Tushare 限流回退的"空壳 universe"
+     不再阻断降级链（此前导致东财延时源永远轮不到）；
+  2. clist 分页：单页上限 100 + 后段页偶发超时 → 每页重试 3 次。
+- **真实数据验证**：`refresh_universe()` → 21205 因子行；turnover_rate 5552 只完整、
+  pe_ttm/pb/roe 5215+ 只；抽查茅台 PE 19.54 / PB 6.33 / ROE 16.75、平安银行 PE 5.09 / PB 0.47。
+- 清理：删除失败刷新遗留的 5547 行全空 daily_metrics 占位（daily_metrics 现为 5552 行真实数据）。
+- 测试：`test_eastmoney_delay_source` 2/2（新增）+ 既有 11 个新测试全过（13 passed）。
+- 提交：`a0ab7e1`…`d14b132` 之后新增本功能提交（见 git log）。
+- 未决：财务深数据（毛利率/营收增速等）仍需 Tushare 积分升级或 BaoStock 网络恢复。
+
 ## 2026-08-19 — Tushare 真数据接入 + 事件日历 + 策略模板 + 模拟交易
 
 - **Tushare 接入**（用户提供 token）：`TUSHARE_TOKEN` 已写入 `backend/.env`（gitignored，不入库）。

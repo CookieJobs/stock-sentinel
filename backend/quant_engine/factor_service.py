@@ -38,10 +38,15 @@ def refresh_universe() -> int:
                 continue
             src = src_cls()
             df = src.get_universe()
-            if df is not None and not df.empty:
+            # 只有含因子列的 df 才算"该源可用"：Tushare 限流回退缓存时返回的
+            # 空壳 universe（无 PE/PB 等）不算成功，继续降级到下一个源
+            factor_cols = [c for c in FACTOR_REGISTRY if df is not None and c in df.columns]
+            if df is not None and not df.empty and factor_cols:
                 actual_src = src
                 break
-            logger.warning("Source %s returned empty, trying next", src.name)
+            logger.warning("Source %s returned %s rows without factor columns, trying next",
+                           src.name if src else src_cls.__name__,
+                           len(df) if df is not None else 0)
         except Exception as e:
             logger.warning("Source %s failed: %s", src_cls.__name__, e)
             continue

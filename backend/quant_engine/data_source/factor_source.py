@@ -333,12 +333,13 @@ class MockFactorSource(FactorSourceBase):
         }
 
 
-# 数据源优先级：Tushare > BaoStock > AkShare > Mock
-# BaoStock 排 AkShare 前：AkShare spot_em 经常限流，且不提供 industry 字段
-# BaoStock 提供 industry（申万）+ name，PE/PB 都暂时为 None
-# AkShare spot_em 偶尔能给 PE/PB（不保证），但抢不过 BaoStock 的 industry
+# 数据源优先级：Tushare > 东财延时 > BaoStock > AkShare > Mock
+# 东财延时（push2delay clist）无 key、无配额，全 A 股 PE/PB/换手/市值/行业/ROE，
+# 在 Tushare 限流时作为真实数据兜底（调研 2026-08-20，见 eastmoney_delay_source.py）
 from .baostock_source import BaoStockFactorSource
-SOURCES = [TushareFactorSource, BaoStockFactorSource, AkShareFactorSource, MockFactorSource]
+from .eastmoney_delay_source import EastMoneyDelayFactorSource
+SOURCES = [TushareFactorSource, EastMoneyDelayFactorSource,
+           BaoStockFactorSource, AkShareFactorSource, MockFactorSource]
 
 
 def get_factor_source():
