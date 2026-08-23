@@ -56,6 +56,7 @@ def _fake_ts_call(api_name, params, fields=""):
 def test_refresh_and_list():
     """refresh 落库 + list 查询：类型、日期、范围过滤正确"""
     tmp = _use_tmp_db()
+    os.environ.pop("THS_API_KEY", None)   # 防止其他测试泄漏的 key 触发真实网络
     os.environ["TUSHARE_TOKEN"] = "fake-token"
     try:
         es._ts_call = _fake_ts_call

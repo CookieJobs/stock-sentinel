@@ -2,6 +2,24 @@
 
 AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加条目。
 
+## 2026-08-20 — 同花顺四连：K线源 / 财务指标 / 异动归因 / 公司行为
+
+- **K 线源**（`THSKlineSource`，commit 3f227d8）：A股日线官方数据 + 周/月线由日线重采样，
+  进 CN 链首位（THS→AkShare→BaoStock→东财），修复 push2his 被风控导致的图表页不可用。
+  实测茅台 1d 255 根 / 1w 55 / 1mo 13。
+- **财务指标 enrichment**（commit 6588bbd）：`ths_indicators` 缓存表 + `refresh_indicators`
+  （报告期未变不重拉）+ `enrich_universe_df` 接入因子刷新——监控股票
+  ROE/ROA/毛利率/净利率/负债率/营收利润增速入因子库（20 只 CN 监控股实测）；
+  修复 daily_metrics INSERT 硬编码 net_margin/debt_ratio 为 None 的旧问题。
+- **异动归因**（commit 7ffc199）：`quant_anomalies` 表 + 当日全市场官方异动原因入库
+  （涨停/跌停/大涨/大跌/快速拉升/下挫），简报新增「今日异动归因（同花顺）」小节。
+- **事件日历增强**（commit d889fde）：THS 公司行为（分红/送股，监控股票）并入事件日历，
+  Tushare 无配额时仍可用；实测 2026 年监控股票 25 笔分红。
+- 测试：新增/更新单测全过（ths_source 8 + ths_service 5 + events 3 + briefing 6）；
+  全量回归 pytest backend/tests/。
+- 限流：文档未公开；实测当天累计 ~100 次调用全部正常。设计保守：批量 + 按需 + 缓存。
+- API 新增：`/api/quant/ths/indicators`（GET/POST refresh）、`/api/quant/ths/anomalies`（GET/POST refresh）。
+
 ## 2026-08-20 — 同花顺数据源激活：官方估值因子全量上线 + 财务指标可用
 
 - 用户提供 `THS_API_KEY`（fuyao.aicubes.cn，同花顺官方）并写入 `backend/.env`。

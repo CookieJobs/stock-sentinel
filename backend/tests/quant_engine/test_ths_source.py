@@ -9,6 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+import pytest
+
 import database
 import quant_engine.db as qdb
 from quant_engine.data_source.ths_source import (
@@ -19,6 +21,16 @@ from quant_engine.data_source.ths_source import (
 _ORIG_DB_PATH = database.DB_PATH
 _ORIG_QDB_PATH = qdb.DB_PATH
 _ORIG_KEY = os.environ.get("THS_API_KEY")
+
+
+@pytest.fixture(autouse=True)
+def _clean_env():
+    """每个用例后清理 THS_API_KEY，防止污染其他测试"""
+    yield
+    if _ORIG_KEY is None:
+        os.environ.pop("THS_API_KEY", None)
+    else:
+        os.environ["THS_API_KEY"] = _ORIG_KEY
 
 
 class FakeResp:
