@@ -224,6 +224,22 @@ SCHEMA = [
         fetched_at TEXT
     )
     """,
+
+    # 同花顺个股异动原因（当日全市场清单，官方归因）
+    """
+    CREATE TABLE IF NOT EXISTS quant_anomalies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trade_date TEXT NOT NULL,
+        ticker TEXT NOT NULL,
+        name TEXT,
+        tag TEXT NOT NULL,                -- LIMIT_UP / LIMIT_DOWN / SHARP_RISE / ...
+        reason TEXT,                      -- 异动解读
+        keywords TEXT,                    -- JSON 数组
+        fetched_at TEXT,
+        UNIQUE(trade_date, ticker, tag)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_quant_anomalies ON quant_anomalies(trade_date, ticker)",
 ]
 
 

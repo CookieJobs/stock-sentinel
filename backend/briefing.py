@@ -325,6 +325,14 @@ class BriefingGenerator:
             lines.append("- 无明显异动或暂无对比数据")
         lines.append("")
 
+        # 异动归因（同花顺官方）
+        if ctx.get("anomalies"):
+            lines.append("## ⚡ 今日异动归因（同花顺）")
+            for a in ctx["anomalies"][:10]:
+                reason = a.get("reason") or "暂无解读"
+                lines.append(f"- {a['ticker']} {a.get('name') or ''}（{a.get('tag')}）：{reason}")
+            lines.append("")
+
         # 风险与免责
         lines.append("## ⚠️ 风险提醒")
         lines.append(f"- 超过阈值的股票请关注是否触发告警；回撤扩大趋势需留意基本面前景。")
@@ -342,6 +350,17 @@ class BriefingGenerator:
 
         # 回撤趋势（只进 stats 供前端渲染，不进 LLM 上下文省 token）
         trends = self._load_trends([s["ticker"] for s in ctx["top_drawdowns"]], date, days=30)
+
+        # 异动归因：同花顺官方当日异动原因（监控股票），先拉再查
+        anomalies = []
+        try:
+            from quant_engine import ths_service
+            ths_service.fetch_anomalies()
+            monitored = ths_service.get_monitored_tickers()
+            anomalies = ths_service.get_anomalies(tickers=monitored or None, limit=50)
+        except Exception as e:
+            logger.warning("Briefing anomaly enrichment failed: %s", e)
+        ctx["anomalies"] = anomalies
 
         mode = "template"
         content = self.generate_template(ctx)

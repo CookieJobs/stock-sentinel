@@ -128,3 +128,75 @@ def enrich_universe_df(df: pd.DataFrame) -> pd.DataFrame:
         for col in INDICATOR_COLS:
             df.at[i, col] = info.get(col)
     return df
+
+
+# ── 异动归因（special-data / anomaly-analysis） ──────────────
+
+ANOMALY_TAGS = "LIMIT_UP,LIMIT_DOWN,SHARP_RISE,SHARP_FALL,RAPID_RALLY,RAPID_DECLINE"
+_TAG_NAME_MAP = {
+    "涨停": "LIMIT_UP", "跌停": "LIMIT_DOWN",
+    "大涨": "SHARP_RISE", "大跌": "SHARP_FALL",
+    "快速拉升": "RAPID_RALLY", "快速下挫": "RAPID_DECLINE",
+}
+
+
+def fetch_anomalies(trade_date: Optional[str] = None) -> int:
+    """拉当日全市场个股异动原因并入库（交易日才有数据，周末为空属正常）"""
+    if not os.environ.get("THS_API_KEY"):
+        return 0
+    client = THSApiClient()
+    try:
+        data = client._get("/api/a-share/special-data/anomaly-analysis-list",
+                           {"tag_codes": ANOMALY_TAGS})
+    except ValueError as e:
+        logger.warning("THS anomaly fetch failed: %s", e)
+        return 0
+    items = data.get("item") or []
+    if not items:
+        return 0
+    trade_date = trade_date or datetime.now().strftime("%Y-%m-%d")
+    now = datetime.now().isoformat()
+    db = get_quant_db()
+    try:
+        db.executemany(
+            """INSERT OR REPLACE INTO quant_anomalies
+               (trade_date, ticker, name, tag, reason, keywords, fetched_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [(
+                trade_date,
+                str(it.get("thscode", "")).split(".")[0],
+                it.get("stock_name"),
+                _TAG_NAME_MAP.get(it.get("tag_name", ""), it.get("tag_name", "")),
+                it.get("analysis_content"),
+                __import__("json").dumps(it.get("keyword_list") or [], ensure_ascii=False),
+                now,
+            ) for it in items],
+        )
+        db.commit()
+        logger.info("THS anomalies stored: %d", len(items))
+        return len(items)
+    finally:
+        db.close()
+
+
+def get_anomalies(trade_date: Optional[str] = None, tag: Optional[str] = None,
+                  tickers: Optional[List[str]] = None, limit: int = 100) -> list:
+    """查询异动记录（按日期/标签/股票过滤）"""
+    sql = "SELECT trade_date, ticker, name, tag, reason, keywords FROM quant_anomalies WHERE 1=1"
+    params: list = []
+    if trade_date:
+        sql += " AND trade_date = ?"
+        params.append(trade_date)
+    if tag:
+        sql += " AND tag = ?"
+        params.append(tag)
+    if tickers:
+        sql += f" AND ticker IN ({','.join('?' * len(tickers))})"
+        params.extend(tickers)
+    sql += " ORDER BY trade_date DESC, ticker LIMIT ?"
+    params.append(limit)
+    db = get_quant_db()
+    try:
+        return [dict(r) for r in db.execute(sql, params).fetchall()]
+    finally:
+        db.close()

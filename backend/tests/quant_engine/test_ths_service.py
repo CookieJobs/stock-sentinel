@@ -133,3 +133,48 @@ def test_enrich_universe_df():
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_anomaly_fetch_and_query():
+    """异动拉取入库 + 按日期/标签/股票过滤查询"""
+    _use_tmp_db()
+    os.environ["THS_API_KEY"] = "fake-key"
+    try:
+        payload = {"timestamp": 1751260800000, "item": [
+            {"stock_name": "贵州茅台", "analysis_content": "白酒板块异动",
+             "keyword_list": ["白酒", "消费"], "thscode": "600519.SH", "tag_name": "大涨"},
+            {"stock_name": "宁德时代", "analysis_content": "锂电板块异动",
+             "keyword_list": ["锂电"], "thscode": "300750.SZ", "tag_name": "快速拉升"},
+        ]}
+        orig_get = ts.THSApiClient._get
+        ts.THSApiClient._get = lambda self, path, params=None: payload
+        try:
+            n = ts.fetch_anomalies("2026-08-21")
+        finally:
+            ts.THSApiClient._get = orig_get
+        assert n == 2
+
+        all_a = ts.get_anomalies()
+        assert len(all_a) == 2
+        tag_a = ts.get_anomalies(tag="SHARP_RISE")
+        assert len(tag_a) == 1 and tag_a[0]["ticker"] == "600519"
+        tk_a = ts.get_anomalies(tickers=["300750"])
+        assert len(tk_a) == 1 and tk_a[0]["ticker"] == "300750"
+        assert "锂电" in (tk_a[0]["keywords"] or "")
+    finally:
+        _restore()
+
+
+def test_anomaly_empty_is_ok():
+    """周末/无数据 → 空列表入库 0 条，不报错"""
+    _use_tmp_db()
+    os.environ["THS_API_KEY"] = "fake-key"
+    try:
+        orig_get = ts.THSApiClient._get
+        ts.THSApiClient._get = lambda self, path, params=None: {"timestamp": 0, "item": []}
+        try:
+            assert ts.fetch_anomalies() == 0
+        finally:
+            ts.THSApiClient._get = orig_get
+    finally:
+        _restore()

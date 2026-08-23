@@ -26,3 +26,18 @@ def get_indicators(tickers: str):
     if not ticker_list:
         raise HTTPException(status_code=400, detail="请指定 tickers")
     return {"indicators": ths_service.get_cached_indicators(ticker_list)}
+
+
+@router.post("/anomalies/refresh")
+def refresh_anomalies():
+    """拉取当日全市场异动原因入库：POST /api/quant/ths/anomalies/refresh"""
+    n = ths_service.fetch_anomalies()
+    return {"stored": n}
+
+
+@router.get("/anomalies")
+def get_anomalies(date: str = "", tag: str = "", tickers: str = ""):
+    """查询异动：GET /api/quant/ths/anomalies?date=2026-08-21&tag=LIMIT_UP&tickers=600519"""
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    return {"anomalies": ths_service.get_anomalies(
+        trade_date=date or None, tag=tag or None, tickers=ticker_list or None)}
