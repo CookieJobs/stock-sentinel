@@ -115,9 +115,36 @@ class THSApiClient:
 
 
 def latest_report(year: int, month: int) -> str:
-    """按当前年月推断最近报告期（yyyy-1 一季报 / 2 中报 / 3 三季报 / 4 年报）"""
-    quarter = (month - 1) // 3 + 1
-    return f"{year}-{quarter}"
+    """按披露日历推断最近**已披露**报告期（yyyy-1 一季报 / 2 中报 / 3 三季报 / 4 年报）
+
+    披露时间：年报次年 1-4 月、一季报 4 月、中报 7-8 月、三季报 10 月。
+    """
+    if 1 <= month <= 4:
+        return f"{year - 1}-4"      # 年报（次年 1-4 月披露）
+    if 5 <= month <= 9:
+        return f"{year}-2"          # 中报（7-8 月披露）
+    return f"{year}-3"              # 三季报（10 月披露）
+
+
+def financial_indicators_latest(client: THSApiClient, thscode: str,
+                                year: int, month: int) -> Dict[str, Optional[float]]:
+    """取最近已披露报告期的财务指标：按披露日历取当期，空/报错回退上一期"""
+    reports = []
+    if 1 <= month <= 4:
+        reports = [f"{year - 1}-4", f"{year - 1}-3", f"{year - 1}-2", f"{year - 1}-1"]
+    elif 5 <= month <= 9:
+        reports = [f"{year}-2", f"{year}-1", f"{year - 1}-4", f"{year - 1}-3"]
+    else:
+        reports = [f"{year}-3", f"{year}-2", f"{year}-1", f"{year - 1}-4"]
+    for report in reports:
+        try:
+            mapped = client.financial_indicators_mapped(thscode, report)
+        except ValueError as e:
+            logger.debug("THS indicators %s %s failed: %s", thscode, report, e)
+            continue
+        if any(v is not None for v in mapped.values()):
+            return mapped
+    return {}
 
 
 def ticker_to_thscode(ticker: str, exchange: Optional[str] = None) -> str:
@@ -179,9 +206,9 @@ class THSValuationFactorSource(FactorSourceBase):
             df["ticker"] = df.get("thscode", "").astype(str).str.split(".").str[0]
         df["ticker"] = df["ticker"].astype(str).str.zfill(6)
         df["market"] = "CN"
-        keep = ["ticker", "market"]
+        keep = ["ticker", "market", "name"]
         for src, dst in (("pe_ttm", "pe_ttm"), ("pe_mrq", "pe_mrq"),
-                         ("pb", "pb"), ("ps_ttm", "ps_ttm"), ("pcf_ttm", "pcf_ttm")):
+                         ("pb_mrq", "pb"), ("ps_ttm", "ps_ttm"), ("pcf_ttm", "pcf_ttm")):
             if src in df.columns:
                 df[dst] = pd.to_numeric(df[src], errors="coerce")
                 keep.append(dst)

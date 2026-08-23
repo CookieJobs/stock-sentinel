@@ -2,6 +2,23 @@
 
 AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加条目。
 
+## 2026-08-20 — 同花顺数据源激活：官方估值因子全量上线 + 财务指标可用
+
+- 用户提供 `THS_API_KEY`（fuyao.aicubes.cn，同花顺官方）并写入 `backend/.env`。
+- 真实验证通过：
+  - `valuations/snapshot` 批量估值：茅台 PE-TTM 19.54/PB 6.33、平安 PE 5.09/PB 0.47，
+    与东财延时源交叉一致（官方数据确认）；
+  - `financials/indicators` 财务指标：茅台毛利率 89.76%/ROE 10.57、宁德 ROE 12.08/
+    毛利率 23.93、平安负债率 90.98（roe/roa/gross_margin/net_margin/debt_ratio 映射就绪）。
+- `refresh_universe()` 全市场刷新：**THS 估值源赢得降级链**（Tushare 日配额仍耗尽），
+  5549 只全量、16645 因子行入库（pe_ttm/pe_mrq/pb/ps_ttm/pcf_ttm），daily_metrics 带名称。
+- 修正：估值字段 `pb_mrq` 映射、`latest_report` 按披露日历 + `financial_indicators_latest`
+  自动回退上一期（当期未披露 5003 时）、THS df 补 name。
+- 测试：`test_ths_source` 7/7；全量回归 157 passed。
+- 提交：`92f78a8`（骨架）+ 本次修正提交。
+- 下一步：财务指标按需 enrichment（监控列表/选股候选 Top N 补 ROE/毛利率/增速），
+  事件/日历/异动归因接入。
+
 ## 2026-08-20 — 东财延时因子源：真实因子数据全量落地（5552 只）
 
 - 调研发现 `push2delay.eastmoney.com`（延时 15 分钟）与 push2 同构但不被风控，

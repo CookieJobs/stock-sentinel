@@ -34,12 +34,28 @@ HTTP 恒 200，业务 code 表达）。数据质量高于爬虫级源，直接�
 
 ## 待 Key 到达后
 
-1. `THS_API_KEY` 写入 `backend/.env`（gitignored）
-2. 验证：`valuations_snapshot` 真实调用（确认免费额度/限流）
-3. `refresh_universe()` 真实刷新 → 确认因子数据 source=ths_valuations
+1. `THS_API_KEY` 写入 `backend/.env`（gitignored）— ✅ 用户已配置
+2. 验证：`valuations_snapshot` 真实调用（确认免费额度/限流）— ✅ 实测 200，返回真实估值
+3. `refresh_universe()` 真实刷新 → 确认因子数据 source=ths_valuations — ✅ 5549 只全量，16645 因子行
 4. 财务指标 enrichment：个股级（监控列表/选股候选 Top N 逐股拉指标补 ROE/毛利率/增速），
-   全市场逐股拉太重，先做按需
+   全市场逐股拉太重，先做按需 — ⏳ 下一步
 5. 事件/日历/异动归因接入（后续迭代）
+
+## 实测修正记录
+
+- 估值响应字段为 `pb_mrq`（非 `pb`）→ 源内映射 pb_mrq → pb
+- `latest_report` 按**披露日历**修正（1-4 月→上年年报、5-9 月→中报、10-12 月→三季报），
+  并新增 `financial_indicators_latest` 自动回退上一期（当期未披露返回 5003 empty 时）
+- THS 估值 df 补 `name` 字段
+- 实测（2026-08-20）：茅台 PE-TTM 19.54/PB 6.33、平安 PE 5.09/PB 0.47，与东财延时源交叉一致；
+  财务指标：茅台毛利率 89.76%/ROE 10.57、宁德 ROE 12.08/毛利率 23.93、平安负债率 90.98
+
+## Todo
+
+- [x] 客户端 + 估值因子源 + 单测（commit 92f78a8，7/7）
+- [x] key 验证 + 全市场真实刷新（16645 因子行）
+- [ ] 财务指标 enrichment（个股级按需）
+- [ ] 事件/日历/异动归因接入
 
 ## 风险与待确认（需人）
 

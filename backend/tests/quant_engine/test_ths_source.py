@@ -60,10 +60,39 @@ def test_ticker_to_thscode():
 
 
 def test_latest_report():
-    assert latest_report(2026, 1) == "2026-1"
-    assert latest_report(2026, 4) == "2026-2"
-    assert latest_report(2026, 8) == "2026-3"
-    assert latest_report(2026, 12) == "2026-4"
+    """按披露日历：1-4 月取上年年报，5-9 月中报，10-12 月三季报"""
+    assert latest_report(2026, 1) == "2025-4"
+    assert latest_report(2026, 4) == "2025-4"
+    assert latest_report(2026, 5) == "2026-2"
+    assert latest_report(2026, 8) == "2026-2"
+    assert latest_report(2026, 10) == "2026-3"
+    assert latest_report(2026, 12) == "2026-3"
+
+
+def test_financial_indicators_latest_fallback():
+    """当期报告未披露（5003）→ 自动回退到上一期"""
+    from quant_engine.data_source.ths_source import financial_indicators_latest
+    empty_payload = {"code": 0, "data": {"abilities": []}}
+    good_payload = {"code": 0, "data": {"abilities": [
+        {"ability": "profitability", "indicators": [
+            {"index_id": "index_weighted_avg_roe", "value": "15.0"}]},
+    ]}}
+
+    class FlakySession:
+        def __init__(self):
+            self.calls = []
+        def get(self, url, params=None, timeout=None):
+            self.calls.append(params)
+            report = (params or {}).get("report", "")
+            payload = good_payload if report == "2026-2" else empty_payload
+            return FakeResp(payload)
+
+    os.environ["THS_API_KEY"] = "fake-key"
+    c = THSApiClient()
+    c.session = FlakySession()
+    mapped = financial_indicators_latest(c, "600519.SH", 2026, 8)
+    assert mapped["roe"] == 15.0
+    assert c.session.calls[0]["report"] == "2026-2"   # 当期中报直接命中
 
 
 def test_valuations_batching_and_envelope():
@@ -131,8 +160,8 @@ def test_valuation_source_universe(monkeypatch):
         db.close()
 
         payload = {"code": 0, "data": {"item": [
-            {"thscode": "600519.SH", "pe_ttm": "19.5", "pb": "6.3", "ps_ttm": "8.1"},
-            {"thscode": "000001.SZ", "pe_ttm": "5.1", "pb": "0.47", "ps_ttm": "1.0"},
+            {"thscode": "600519.SH", "pe_ttm": "19.5", "pb_mrq": "6.3", "ps_ttm": "8.1"},
+            {"thscode": "000001.SZ", "pe_ttm": "5.1", "pb_mrq": "0.47", "ps_ttm": "1.0"},
         ]}}
         src = THSValuationFactorSource()
         src.client = _mk_client({"/api/a-share/valuations/snapshot": payload})
