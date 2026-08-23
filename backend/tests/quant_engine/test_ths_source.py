@@ -183,3 +183,39 @@ def test_valuation_source_universe(monkeypatch):
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_kline_source(monkeypatch):
+    """K 线源：历史响应 → df（升序、字段映射、周线重采样）"""
+    from quant_engine.data_source.ths_source import THSKlineSource, _resample_kline
+    import pandas as pd
+    from datetime import datetime
+
+    def fake_get(self, path, params=None, timeout=None):
+        assert path == "/api/a-share/prices/historical"
+        assert params["thscode"] == "600519.SH"
+        assert params["adjust"] == "forward"
+        day = 86400000
+        base = int(datetime(2026, 8, 1).timestamp() * 1000)
+        return {"item": [
+            {"date_ms": base + 2 * day, "volume": 100.0, "turnover": 1e6,
+             "open_price": 10.0, "high_price": 12.0, "low_price": 9.5, "close_price": 11.0},
+            {"date_ms": base + 1 * day, "volume": 200.0, "turnover": 2e6,
+             "open_price": 9.0, "high_price": 11.0, "low_price": 8.5, "close_price": 10.0},
+        ]}
+
+    monkeypatch.setattr("quant_engine.data_source.ths_source.THSApiClient._get", fake_get)
+    os.environ["THS_API_KEY"] = "fake-key"
+    src = THSKlineSource()
+    df = src.get_kline("600519", "CN", period="1d", adj="qfq")
+    assert list(df.columns) == ["trade_date", "open", "high", "low", "close", "volume", "amount"]
+    assert df["trade_date"].tolist() == sorted(df["trade_date"].tolist())   # 升序
+    assert df.iloc[-1]["close"] == 11.0
+
+    # 周线重采样
+    weekly = _resample_kline(df, "W")
+    assert len(weekly) >= 1
+    assert weekly["close"].iloc[-1] == 11.0
+
+    # 非 CN 市场 → None（降级链继续）
+    assert src.get_kline("AAPL", "US", period="1d") is None

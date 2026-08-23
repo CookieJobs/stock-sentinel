@@ -14,12 +14,13 @@
 """
 import logging
 import os
+import time
 from typing import Dict, List, Optional
 
 import pandas as pd
 import requests
 
-from .base import FactorSourceBase
+from .base import DataSourceBase, FactorSourceBase
 
 logger = logging.getLogger(__name__)
 
@@ -214,3 +215,90 @@ class THSValuationFactorSource(FactorSourceBase):
                 keep.append(dst)
         logger.info("THS valuations universe: %d rows", len(df))
         return df[[c for c in keep if c in df.columns]].reset_index(drop=True)
+
+
+class THSKlineSource(DataSourceBase):
+    """同花顺 A 股日线 K 线源（官方数据；周/月线由日线重采样）
+
+    限制：仅支持 A 股日线（interval=1d），1w/1mo 由 1d 重采样；
+    其他市场或周期返回 None 让降级链继续。
+    """
+
+    name = "ths_kline"
+    required_env = "THS_API_KEY"
+
+    def __init__(self):
+        self.client = THSApiClient()
+
+    def get_kline(self, ticker: str, market: str, period: str = "1d",
+                  start: Optional[str] = None, end: Optional[str] = None,
+                  adj: str = "qfq") -> Optional[pd.DataFrame]:
+        if market != "CN":
+            return None
+        thscode = ticker_to_thscode(ticker)
+        end_ms = int(time.time() * 1000)
+        if end:
+            try:
+                end_ms = int(pd.Timestamp(end).timestamp() * 1000)
+            except Exception:
+                pass
+        if start:
+            try:
+                start_ms = int(pd.Timestamp(start).timestamp() * 1000)
+            except Exception:
+                start_ms = end_ms - 2 * 365 * 24 * 3600 * 1000
+        else:
+            start_ms = end_ms - 2 * 365 * 24 * 3600 * 1000
+        adjust = {"qfq": "forward", "hfq": "backward", "none": "none"}.get(adj, "forward")
+
+        try:
+            data = self.client._get(
+                "/api/a-share/prices/historical",
+                {"thscode": thscode, "interval": "1d",
+                 "start": start_ms, "end": end_ms, "adjust": adjust},
+            )
+        except ValueError as e:
+            logger.warning("THS kline failed for %s: %s", thscode, e)
+            return None
+        items = data.get("item") or []
+        if not items:
+            return None
+        df = pd.DataFrame(items)
+        df["trade_date"] = pd.to_datetime(df["date_ms"], unit="ms").dt.strftime("%Y-%m-%d")
+        df = df.rename(columns={
+            "open_price": "open", "high_price": "high",
+            "low_price": "low", "close_price": "close",
+            "volume": "volume", "turnover": "amount",
+        })
+        df = df[["trade_date", "open", "high", "low", "close", "volume", "amount"]]
+        for col in ("open", "high", "low", "close", "volume", "amount"):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.sort_values("trade_date").reset_index(drop=True)
+
+        # 周/月线由日线重采样
+        if period == "1w":
+            df = _resample_kline(df, "W")
+        elif period == "1mo":
+            df = _resample_kline(df, "ME")
+        elif period != "1d":
+            return None
+        return df
+
+
+def _resample_kline(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """日线 → 周/月线：open 首、close 末、high max、low min、volume/amount sum"""
+    if df.empty:
+        return df
+    d = df.copy()
+    d["trade_date"] = pd.to_datetime(d["trade_date"])
+    g = d.groupby(pd.Grouper(key="trade_date", freq=rule))
+    out = pd.DataFrame({
+        "trade_date": g["trade_date"].last().dt.strftime("%Y-%m-%d"),
+        "open": g["open"].first(),
+        "high": g["high"].max(),
+        "low": g["low"].min(),
+        "close": g["close"].last(),
+        "volume": g["volume"].sum(),
+        "amount": g["amount"].sum(),
+    }).dropna(subset=["close"])
+    return out.reset_index(drop=True)

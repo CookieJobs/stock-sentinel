@@ -13,12 +13,13 @@ from .eastmoney_source import EastMoneySource
 from .akshare_source import AkShareSource
 from .finnhub_source import FinnHubSource
 from .baostock_source import BaoStockSource
+from .ths_source import THSKlineSource
 from .base import DataSourceBase
 
 
-# 数据源优先级：akshare 优先（封装好）→ BaoStock（日K + 因子）→ 东方财富（兜底 + 分钟K）
+# 数据源优先级：同花顺（官方日线，需 key）→ AkShare → BaoStock → 东方财富（兜底 + 分钟K）
 SOURCES = {
-    "CN": [AkShareSource, BaoStockSource, EastMoneySource],
+    "CN": [THSKlineSource, AkShareSource, BaoStockSource, EastMoneySource],
     "HK": [EastMoneySource, AkShareSource],
     "US": [FinnHubSource],
 }
