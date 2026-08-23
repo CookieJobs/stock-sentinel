@@ -108,3 +108,50 @@ if __name__ == "__main__":
             traceback.print_exc()
     print(f"{passed}/{len(tests)} passed")
     sys.exit(0 if passed == len(tests) else 1)
+
+
+def test_ths_corporate_actions():
+    """THS 公司行为并入事件日历（监控股票 + 区间过滤 + 无 Tushare 时仍可用）"""
+    tmp = _use_tmp_db()
+    os.environ["TUSHARE_TOKEN"] = "fake-token"
+    os.environ["THS_API_KEY"] = "fake-key"
+    try:
+        db = database.get_db()
+        db.execute("""CREATE TABLE IF NOT EXISTS stocks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL UNIQUE,
+            name TEXT, market TEXT DEFAULT 'US')""")
+        db.execute("INSERT OR IGNORE INTO stocks (ticker, name, market) VALUES ('600519', '贵州茅台', 'CN')")
+        db.commit()
+        db.close()
+
+        from quant_engine.data_source import ths_source
+        es._ts_call = lambda *a, **k: None      # Tushare 侧无数据
+
+        def fake_get(self, path, params=None):
+            return {"thscode": params["thscode"], "ticker": params["thscode"].split(".")[0],
+                    "item": [
+                        {"ex_date_ms": 1782403200000, "dividend_per_share": 28.02, "per_share_bonus": 0},
+                        {"ex_date_ms": 1750867200000, "dividend_per_share": 27.67, "per_share_bonus": 0},
+                    ]}
+
+        orig = ths_source.THSApiClient._get
+        ths_source.THSApiClient._get = fake_get
+        try:
+            result = es.refresh_events("2026-01-01", "2026-12-31")
+        finally:
+            ths_source.THSApiClient._get = orig
+
+        assert result["ths_dividend"] == 1        # 只有 2026 年的那笔在区间内
+        assert result["inserted"] == 1
+        events = es.list_events("2026-01-01", "2026-12-31")
+        assert len(events) == 1
+        assert events[0]["ticker"] == "600519"
+        assert "28.02" in events[0]["title"]
+        assert '"source": "ths"' in events[0]["detail"]
+    finally:
+        if _ORIG_TOKEN is None:
+            os.environ.pop("TUSHARE_TOKEN", None)
+        else:
+            os.environ["TUSHARE_TOKEN"] = _ORIG_TOKEN
+        os.environ.pop("THS_API_KEY", None)
+        _restore_db()

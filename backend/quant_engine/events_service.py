@@ -140,18 +140,66 @@ def _fetch_share_float(start: str, end: str) -> list:
     return out
 
 
+def _fetch_ths_corporate_actions(start: str, end: str) -> list:
+    """同花顺公司行为（分红/送股，监控股票，无配额依赖）
+    → [(event_date, ticker, title, detail_json), ...]"""
+    if not os.environ.get("THS_API_KEY"):
+        return []
+    from .data_source.ths_source import THSApiClient, ticker_to_thscode
+    from .ths_service import get_monitored_tickers
+    tickers = get_monitored_tickers()
+    if not tickers or len(tickers) > 300:
+        return []
+    client = THSApiClient()
+    out = []
+    for ticker in tickers:
+        try:
+            data = client._get(
+                "/api/a-share/corporate-actions/adjustment-factors",
+                {"thscode": ticker_to_thscode(ticker), "from": start, "to": end},
+            )
+        except ValueError as e:
+            logger.debug("THS corp-actions %s failed: %s", ticker, e)
+            continue
+        for it in data.get("item") or []:
+            ex_ms = it.get("ex_date_ms")
+            if not ex_ms:
+                continue
+            event_date = datetime.fromtimestamp(ex_ms / 1000).strftime("%Y-%m-%d")
+            if not (start <= event_date <= end):
+                continue
+            div = it.get("dividend_per_share")
+            bonus = it.get("per_share_bonus")
+            parts = []
+            if div:
+                parts.append(f"每股派息 {div} 元")
+            if bonus:
+                parts.append(f"每股送转 {bonus} 股")
+            title = "分红送转：" + "、".join(parts) if parts else "分红送转"
+            detail = json.dumps({
+                "dividend_per_share": div, "per_share_bonus": bonus, "source": "ths",
+            }, ensure_ascii=False)
+            out.append((event_date, ticker, title, detail))
+    logger.info("THS corporate-actions: %d events", len(out))
+    return out
+
+
 def refresh_events(start: str, end: str) -> dict:
-    """拉取 [start, end] 区间的事件并入库存，返回 {inserted, dividend, share_float}"""
+    """拉取 [start, end] 区间的事件并入库存，返回 {inserted, dividend, share_float, ths_dividend}"""
     if not _token():
         logger.warning("TUSHARE_TOKEN not set, skip events refresh")
-        return {"inserted": 0, "dividend": 0, "share_float": 0, "error": "TUSHARE_TOKEN not set"}
+        return {"inserted": 0, "dividend": 0, "share_float": 0, "ths_dividend": 0,
+                "error": "TUSHARE_TOKEN not set"}
 
     dividend_rows = _fetch_dividend(start, end)
     float_rows = _fetch_share_float(start, end)
+    ths_rows = _fetch_ths_corporate_actions(start, end)
     rows = [(d, t, "dividend", title, detail) for d, t, title, detail in dividend_rows]
     rows += [(d, t, "share_float", title, detail) for d, t, title, detail in float_rows]
+    rows += [(d, t, "dividend", title, detail) for d, t, title, detail in ths_rows]
     if not rows:
-        return {"inserted": 0, "dividend": len(dividend_rows), "share_float": len(float_rows)}
+        return {"inserted": 0, "dividend": len(dividend_rows),
+                "share_float": len(float_rows), "ths_dividend": len(ths_rows)}
 
     now = datetime.now().isoformat()
     db = get_quant_db()
@@ -165,7 +213,8 @@ def refresh_events(start: str, end: str) -> dict:
         db.commit()
     finally:
         db.close()
-    return {"inserted": len(rows), "dividend": len(dividend_rows), "share_float": len(float_rows)}
+    return {"inserted": len(rows), "dividend": len(dividend_rows),
+            "share_float": len(float_rows), "ths_dividend": len(ths_rows)}
 
 
 def list_events(start: str, end: str, event_type: Optional[str] = None, limit: int = 300) -> list:
