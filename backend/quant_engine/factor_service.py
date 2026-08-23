@@ -34,7 +34,7 @@ def refresh_universe() -> int:
     actual_src = None
     for src_cls in SRC_LIST:
         try:
-            if src_cls is TushareFactorSource and not os.environ.get("TUSHARE_TOKEN"):
+            if getattr(src_cls, "required_env", None) and not os.environ.get(src_cls.required_env):
                 continue
             src = src_cls()
             df = src.get_universe()
