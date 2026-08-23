@@ -213,6 +213,17 @@ SCHEMA = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_paper_equity ON paper_equity(portfolio_id, equity_date)",
+
+    # 同花顺财务指标缓存（roe/毛利率/增速等，按个股+报告期缓存，季度更新）
+    """
+    CREATE TABLE IF NOT EXISTS ths_indicators (
+        ticker TEXT PRIMARY KEY,
+        report TEXT,
+        roe REAL, roa REAL, gross_margin REAL, net_margin REAL, debt_ratio REAL,
+        revenue_yoy REAL, profit_yoy REAL,
+        fetched_at TEXT
+    )
+    """,
 ]
 
 

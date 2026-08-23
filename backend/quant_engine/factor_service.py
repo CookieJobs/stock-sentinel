@@ -56,6 +56,14 @@ def refresh_universe() -> int:
         return 0
     logger.info("Loaded universe from %s: %d rows", actual_src.name, len(df))
 
+    # 同花顺财务指标 enrichment：给监控股票的 df 行附加 roe/毛利率/增速等列
+    if os.environ.get("THS_API_KEY"):
+        try:
+            from . import ths_service
+            df = ths_service.enrich_universe_df(df)
+        except Exception as e:
+            logger.warning("THS indicator enrichment failed: %s", e)
+
     today = datetime.now().strftime("%Y-%m-%d")
 
     # 计算各因子的截面排名
@@ -93,10 +101,10 @@ def refresh_universe() -> int:
                 r.get("name"), r.get("industry"),
                 r.get("pe_ttm"), r.get("pb"), r.get("ps_ttm"), None,
                 r.get("market_cap"), r.get("turnover_rate"),
-                r.get("roe"), None,
-                None, None,  # revenue_yoy, profit_yoy
-                r.get("gross_margin"), None,
-                None, None,
+                r.get("roe"), r.get("roa"),
+                r.get("revenue_yoy"), r.get("profit_yoy"),
+                r.get("gross_margin"), r.get("net_margin"),
+                r.get("debt_ratio"), None,
             ))
         cur.executemany(
             """INSERT OR REPLACE INTO daily_metrics
