@@ -11,6 +11,7 @@ import Portfolio from './pages/Portfolio'
 import Risk from './pages/Risk'
 import EventCalendar from './pages/EventCalendar'
 import PaperTrading from './pages/PaperTrading'
+import DataSourceSettings from './pages/DataSourceSettings'
 
 function NavItem({ to, label, icon }) {
   return (
@@ -51,6 +52,7 @@ function App() {
               <NavItem to="/risk" label="风险" icon="⚖️" />
               <NavItem to="/events" label="事件" icon="🗓️" />
               <NavItem to="/paper" label="模拟交易" icon="🪙" />
+              <NavItem to="/settings" label="数据源" icon="⚙️" />
             </nav>
 
             <div className="ml-auto text-xs text-sent-dim">个人投研型量化分析平台</div>
@@ -66,6 +68,7 @@ function App() {
             <Route path="/risk" element={<Risk />} />
             <Route path="/events" element={<EventCalendar />} />
             <Route path="/paper" element={<PaperTrading />} />
+            <Route path="/settings" element={<DataSourceSettings />} />
           </Routes>
         </main>
       </div>

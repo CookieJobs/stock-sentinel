@@ -29,9 +29,10 @@ def get_kline(ticker: str, market: str, period: str = "1d",
               start: str = None, end: str = None, adj: str = "qfq") -> "pd.DataFrame":
     """统一 K 线获取入口
 
-    按 SOURCES 优先级逐个尝试，失败则降级到下一个。
+    按 SOURCES 优先级逐个尝试（用户可在 /settings 钉住某个源优先），失败则降级到下一个。
     """
-    sources = SOURCES.get(market, [])
+    from datasource_config import ordered_by_preference
+    sources = ordered_by_preference(SOURCES.get(market, []), "kline")
     last_err = None
     for source_cls in sources:
         try:
