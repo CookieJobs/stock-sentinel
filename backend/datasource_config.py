@@ -17,11 +17,29 @@ logger = logging.getLogger(__name__)
 
 DOMAINS = ("realtime", "factor", "kline")
 
+# 数据源中文名（括号英文名）——前端展示用
+SOURCE_LABELS: Dict[str, str] = {
+    "eastmoney": "东方财富 (eastmoney)",
+    "tencent": "腾讯行情 (tencent)",
+    "ths": "同花顺 (ths)",
+    "tushare": "Tushare (tushare)",
+    "eastmoney_delay": "东方财富延时 (eastmoney_delay)",
+    "baostock": "BaoStock (baostock)",
+    "akshare": "AkShare (akshare)",
+    "finnhub": "Finnhub (finnhub)",
+    "yahoo": "Yahoo Finance (yahoo)",
+}
+
 OPTIONS: Dict[str, List[str]] = {
     "realtime": ["eastmoney", "tencent"],
     "factor": ["tushare", "ths", "eastmoney_delay", "baostock", "akshare"],
     "kline": ["ths", "akshare", "baostock", "eastmoney"],
 }
+
+
+def label_of(source: str) -> str:
+    """源名 → 中文名（括号英文名）；未知源回退源名本身"""
+    return SOURCE_LABELS.get(source, source)
 
 
 def _key(domain: str) -> str:
@@ -64,14 +82,14 @@ def set_override(domain: str, source: str) -> None:
 
 
 def get_config() -> Dict[str, dict]:
-    """全量配置：{domain: {mode, source, options}}"""
+    """全量配置：{domain: {mode, source, options: [{value, label}]}}"""
     out: Dict[str, dict] = {}
     for domain in DOMAINS:
         override = get_override(domain)
         out[domain] = {
             "mode": "fixed" if override else "auto",
             "source": override,
-            "options": OPTIONS[domain],
+            "options": [{"value": v, "label": label_of(v)} for v in OPTIONS[domain]],
         }
     return out
 

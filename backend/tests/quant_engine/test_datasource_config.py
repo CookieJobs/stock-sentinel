@@ -99,7 +99,9 @@ def test_ordered_kline_and_realtime():
         assert dc.ordered_by_preference(chain, "kline") == [ThsS, AkShareS]
         dc.set_override("kline", "baostock")   # 合法值但不在链中 → 原样
         assert dc.ordered_by_preference(chain, "kline") == [ThsS, AkShareS]
-        assert dc.get_config()["realtime"]["options"] == ["eastmoney", "tencent"]
+        opts = dc.get_config()["realtime"]["options"]
+        assert opts[0] == {"value": "eastmoney", "label": "东方财富 (eastmoney)"}
+        assert dc.label_of("tencent") == "腾讯行情 (tencent)"
     finally:
         _restore()
 

@@ -78,7 +78,7 @@ export default function DataSourceSettings() {
               <div>
                 <div className="text-sm font-bold text-white">{DOMAIN_LABELS[domain] || domain}</div>
                 <div className="text-xs text-sent-dim mt-0.5">
-                  可选：{['auto', ...info.options].join(' / ')}
+                  可选：自动 / {info.options.map((o) => o.label).join(' / ')}
                 </div>
               </div>
               <select
@@ -88,7 +88,7 @@ export default function DataSourceSettings() {
               >
                 <option value="auto">自动（推荐）</option>
                 {info.options.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
