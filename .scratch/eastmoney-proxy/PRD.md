@@ -41,6 +41,15 @@ Date: 2026-08-18
 - 代理规则修好后，可将 `backend/data_fetcher.py` 的东财 URL 改回 https（消掉安全债）。
 - 本 issue 完成前，代码保持 http workaround 不动。
 
+## 结论更新（2026-08-20，已解决）
+
+- 用户确认：当初 https 不可用的根因是 **Clash 虚拟网卡（TUN/fake-IP）**；正常网络下 https 可用。
+- 实测仍观察到：Clash TUN 开启时 DNS 回到 198.18.0.x 假 IP、http/https 全断；TUN 关闭后东财正常
+  （期间 push2 曾恢复并返回 eastmoney 源）。
+- 代码已改为 **https 优先、TLS 被重置时自动降级 http**（`data_fetcher._em_get`，commit 2170ff2）——
+  网络正常时自动走加密通道，Clash TUN 干扰时自动降级 http，CN/HK 行情不依赖单协议。
+- 状态：安全债已消除（固定明文 → 自动 https）。后续若 Clash 配置长期稳定，可把 http 降级改为可选。
+
 ## 测试更新（2026-08-19，用户改 Clash 规则后）
 
 1. DNS 已恢复真实 IP（`push2` → 101.226.x、`push2his` → 14.103.x/117.184.x，不再 198.18.x）——**DIRECT 规则生效**。

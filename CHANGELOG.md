@@ -2,6 +2,20 @@
 
 AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加条目。
 
+## 2026-08-20 — 数据源中文名 + 东财 https 自动降级 + Yahoo 美股第二源
+
+- **数据源中文名（括号英文名）**（commit 76948f7）：`/settings` 页与配置 API 显示
+  东方财富 (eastmoney) / 腾讯行情 (tencent) / 同花顺 (ths) / 东方财富延时 / BaoStock /
+  AkShare / Tushare / Finnhub / Yahoo Finance。
+- **东财 https 优先自动降级**（commit 2170ff2）：`_em_get` https 优先，TLS 被重置时自动降级 http。
+  用户确认当初根因是 Clash 虚拟网卡（TUN/fake-IP）——安全债消除：网络正常自动走加密通道，
+  Clash TUN 干扰时自动降级，行情不依赖单协议（见 `.scratch/eastmoney-proxy/` 结论更新）。
+- **Yahoo Finance 美股第二源**（commit 2170ff2）：`_get_yahoo_quote`（chart API，免费无 key），
+  美股链 Finnhub → Yahoo → None；实测 AAPL 311.72/52w 高 344.57，NVDA 在 Finnhub 不可用时
+  自动切 Yahoo。
+- 测试：test_data_fetcher 新增 em_get 双分支 + Yahoo 解析用例；全量回归 **168 passed**；
+  前端 lint + build 通过（产物同步）。
+
 ## 2026-08-20 — 数据源选择 + 移除全部 Demo 假数据
 
 - **数据源选择**（commit 0769eb7）：`/settings` 页可对「实时行情 / 因子 / K线」三个数据域
