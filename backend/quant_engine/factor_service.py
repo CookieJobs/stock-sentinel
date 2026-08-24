@@ -16,7 +16,7 @@ import pandas as pd
 
 from .db import get_quant_db
 from .factors import FACTOR_REGISTRY, cross_sectional_rank
-from .data_source.factor_source import get_factor_source, MockFactorSource, AkShareFactorSource, TushareFactorSource
+from .data_source.factor_source import get_factor_source, AkShareFactorSource, TushareFactorSource
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +28,12 @@ def refresh_universe() -> int:
 
     Returns: 入库行数
     """
-    # 按数据源优先级逐个尝试（任一成功即用）
+    # 按数据源优先级逐个尝试（任一成功即用；用户钉住的源优先）
     from .data_source.factor_source import SOURCES as SRC_LIST
+    from datasource_config import ordered_by_preference
     df = None
     actual_src = None
-    for src_cls in SRC_LIST:
+    for src_cls in ordered_by_preference(SRC_LIST, "factor"):
         try:
             if getattr(src_cls, "required_env", None) and not os.environ.get(src_cls.required_env):
                 continue

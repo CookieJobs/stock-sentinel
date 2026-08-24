@@ -9,7 +9,6 @@ df = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(df)
 
 DataFetcher = df.DataFetcher
-DEMO_DATA = df.DEMO_DATA
 _SECTOR_MAP = df._SECTOR_MAP
 
 # test detect_market
@@ -43,9 +42,7 @@ assert DataFetcher.get_market_status(-5) == 'normal'
 assert DataFetcher.get_market_status(None) == 'normal'
 print('get_market_status: PASS')
 
-# test demo fallback for 3 markets（确定性：屏蔽真实 API，只验证回退路径）
-# 东财/Finnhub 可达时返回真实数据，直接断言 source=='demo' 会随网络环境漂移；
-# 改为临时把三个取数方法替换为失败，验证回退逻辑本身，finally 中恢复。
+# test 全部数据源失败 → 返回 None（不造假数据）
 _orig_fetch = {
     '_get_finnhub_quote': DataFetcher._get_finnhub_quote,
     '_get_eastmoney_quote': DataFetcher._get_eastmoney_quote,
@@ -54,24 +51,11 @@ _orig_fetch = {
 }
 for _name in _orig_fetch:
     setattr(DataFetcher, _name, staticmethod(lambda *a, **k: None))
-
 try:
     for t, m in [('AAPL', 'US'), ('600519', 'CN'), ('00700', 'HK')]:
         r = DataFetcher.get_stock_info(t)
-        assert r is not None, f'{m} returned None'
-        assert r['market'] == m, f'{m} market mismatch: {r["market"]}'
-        assert r['source'] == 'demo', f'{m} source is {r["source"]}'
-    print('DEMO 3-market fallback: PASS')
-
-    # Check a few specific demo values（价格动态 ±3%，sector 走静态映射兜底）
-    for t in ['AAPL', '600519', '00700']:
-        r = DataFetcher.get_stock_info(t)
-        base = DEMO_DATA[t]['current_price']
-        assert base * 0.97 <= r['current_price'] <= base * 1.03, \
-            f'{t} price out of range: {r["current_price"]}'
-        assert r['name'] == DEMO_DATA[t]['name'], f'{t} name mismatch: {r["name"]}'
-        assert r['sector'] == _SECTOR_MAP[t], f'{t} sector mismatch: {r["sector"]}'
-    print('Specific value checks: PASS')
+        assert r is None, f'{m} 应返回 None（无假数据），实际 {r}'
+    print('No-data → None: PASS')
 finally:
     for _name, _orig in _orig_fetch.items():
         setattr(DataFetcher, _name, _orig)
@@ -106,24 +90,27 @@ finally:
     DataFetcher._get_eastmoney_hk_quote = _orig_emh
     DataFetcher._get_tencent_quote = _orig_tq
 
-# test all DEMO_DATA stocks have required keys
-from collections import Counter
-all_ok = True
-for t in sorted(DEMO_DATA):
-    info = DataFetcher.get_stock_info(t)
-    if info is None:
-        print(f'  FAIL: {t} returned None')
-        all_ok = False
-        continue
-    for key in ['drawdown', 'distance_low_pct', 'market_status', 'sector', 'pe_ratio', 'source']:
-        if key not in info:
-            print(f'  FAIL: {t} missing {key}')
-            all_ok = False
-if all_ok:
-    print(f'All {len(DEMO_DATA)} DEMO stocks validated: PASS')
+print()
+print('ALL TESTS PASSED')
 
-c = Counter(d['market'] for d in DEMO_DATA.values())
-print(f'Market distribution: {dict(c)}')
+# test 用户钉住实时源：realtime=tencent → 腾讯优先调用
+import datasource_config as _dsc
+_orig_override = _dsc.get_override
+_dsc.get_override = staticmethod(lambda domain: "tencent" if domain == "realtime" else None)
+_orig_em3 = DataFetcher._get_eastmoney_quote
+_orig_tq3 = DataFetcher._get_tencent_quote
+DataFetcher._get_eastmoney_quote = staticmethod(
+    lambda *a, **k: {"ticker": "600519", "name": "EM", "current_price": 1.0})
+DataFetcher._get_tencent_quote = staticmethod(
+    lambda *a, **k: {"ticker": "600519", "name": "TX", "current_price": 2.0})
+try:
+    r = DataFetcher.get_stock_info('600519')
+    assert r['source'] == 'tencent', f"钉住 tencent 应优先腾讯，实际 {r['source']}"
+    print('Realtime source override: PASS')
+finally:
+    DataFetcher._get_eastmoney_quote = _orig_em3
+    DataFetcher._get_tencent_quote = _orig_tq3
+    _dsc.get_override = _orig_override
 
 print()
 print('ALL TESTS PASSED')

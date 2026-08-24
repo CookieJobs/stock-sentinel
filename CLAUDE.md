@@ -108,12 +108,12 @@ backend/
 
 - **`monitor.py`** — `StockMonitor`：自选股 CRUD + 后台自动刷新（30s 定时；CN/HK 交易时段
   09:30-16:00 北京时间跳过美股以尊重 Finnhub 限频）+ 单股/批量刷新（`task_id` 进度）。
-  同时把真实行情写入 `price_history`（15 分钟桶幂等；demo 数据不落库）。
+  同时把真实行情写入 `price_history`（15 分钟桶幂等）。
 - **`data_fetcher.py`** — `DataFetcher` 三市场数据管线：US 走 Finnhub（`/quote`、`/stock/metric`、
   `/stock/profile2`，需 `FINNHUB_API_KEY`）；CN 走东方财富 push2 实时 + K 线（52 周高低点由
   最多 300 根日 K 计算，`fltt=1` 价格单位为分/100）；HK 走东方财富 `fltt=2`（价格已正确缩放，
   secid 格式 `116.00xxx`）。CN/HK 东财失败时自动降级腾讯行情（`qt.gtimg.cn` 实时 + `web.ifzq.gtimg.cn`
-  日 K 算 52 周高低点，`source=tencent`）。API 全失败或无 key 时回退内置 `DEMO_DATA`。`detect_market()`：
+  日 K 算 52 周高低点，`source=tencent`）。API 全部失败返回 None（不造假数据）。`detect_market()`：
   6 位数字 → CN，1-5 位数字 → HK，`.HK` 后缀 → HK，其余 → US。
 - **`alerter.py`** — `StockAlerter` 后台线程（`ALERT_CHECK_INTERVAL`，默认 300s）：逐股检查
   回撤是否超阈值，按 ticker+日期经 `alert_history` 去重，未读告警存 `alert_unread`。
@@ -206,7 +206,7 @@ frontend/src/
 ### v0.2.0（保留）
 - **No ORM** — raw SQL via `sqlite3` with `row_factory = sqlite3.Row`
 - **Threading, not async** — 背景 refresh + alert 用 `threading.Thread` / `threading.Timer`
-- **Demo data fallback** — 三市场数据 API 失败时回退到内置 `DEMO_DATA`
+- **多源降级，不造假数据** — 三市场行情/因子/K线均为多源降级链；全部失败如实返回 None/空（2026-08-20 起移除 DEMO_DATA 与 MockFactorSource）
 - **52-week high/low** — 客户端从东方财富 K 线计算（最多 300 根周 K）
 
 ### v1.0 新增

@@ -239,10 +239,6 @@ class StockMonitor:
         if not data:
             return None
 
-        # 禁止 demo 假数据覆盖数据库（仅刷新场景，新增股票不受影响）
-        if data.get("source") == "demo":
-            return data
-
         db = get_db()
         try:
             db.execute(
@@ -395,8 +391,8 @@ class StockMonitor:
         return dt.strftime("%Y-%m-%d %H:") + f"{dt.minute // 15 * 15:02d}"
 
     def _record_price_point(self, data: Optional[Dict[str, Any]]) -> None:
-        """真实行情落库 price_history（15 分钟桶幂等，demo 数据不落库）"""
-        if not data or data.get("source") == "demo":
+        """真实行情落库 price_history（15 分钟桶幂等）"""
+        if not data:
             return
         now = datetime.now(timezone(timedelta(hours=8)))
         retention_days = int(os.environ.get("PRICE_HISTORY_RETENTION_DAYS", "90"))

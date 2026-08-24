@@ -68,56 +68,6 @@ _SECTOR_MAP = {
     "00388": "金融", "02015": "汽车", "00100": "AI",
 }
 
-# 演示/测试数据 — 包含 3 个市场
-DEMO_DATA: Dict[str, Dict[str, Any]] = {
-    "AAPL": {"current_price": 273.17, "week52_high": 288.61, "week52_low": 193.25,
-             "name": "苹果", "pe_ratio": 34.6, "market": "US"},
-    "MSFT": {"current_price": 432.92, "week52_high": 555.45, "week52_low": 356.28,
-             "name": "微软", "pe_ratio": 27.1, "market": "US"},
-    "GOOGL": {"current_price": 339.32, "week52_high": 349.00, "week52_low": 147.84,
-              "name": "谷歌", "pe_ratio": 31.4, "market": "US"},
-    "META": {"current_price": 674.72, "week52_high": 796.25, "week52_low": 516.52,
-             "name": "Meta", "pe_ratio": 23.3, "market": "US"},
-    "ORCL": {"current_price": 187.50, "week52_high": 345.72, "week52_low": 130.99,
-             "name": "甲骨文", "pe_ratio": 33.7, "market": "US"},
-    "NVDA": {"current_price": 875.35, "week52_high": 974.00, "week52_low": 495.22,
-             "name": "英伟达", "pe_ratio": 65.2, "market": "US"},
-    "TSLA": {"current_price": 245.80, "week52_high": 414.50, "week52_low": 138.80,
-             "name": "特斯拉", "pe_ratio": 78.5, "market": "US"},
-    "AMZN": {"current_price": 245.80, "week52_high": 289.00, "week52_low": 151.61,
-             "name": "亚马逊", "pe_ratio": 62.1, "market": "US"},
-    "AMD":  {"current_price": 156.75, "week52_high": 227.30, "week52_low": 93.12,
-             "name": "AMD",   "pe_ratio": 45.2, "market": "US"},
-    "600519": {"current_price": 1371.72, "week52_high": 1593.44, "week52_low": 1322.01,
-               "name": "贵州茅台", "pe_ratio": 15.8, "market": "CN"},
-    "000001": {"current_price": 11.50, "week52_high": 12.50, "week52_low": 10.22,
-               "name": "平安银行", "pe_ratio": 3.8, "market": "CN"},
-    "300750": {"current_price": 438.19, "week52_high": 468.75, "week52_low": 196.67,
-               "name": "宁德时代", "pe_ratio": 25.2, "market": "CN"},
-    "01810": {"current_price": 31.12, "week52_high": 61.45, "week52_low": 28.80,
-              "name": "小米集团-W", "pe_ratio": 18.31, "market": "HK"},
-    "00100": {"current_price": 708.00, "week52_high": 1330.00, "week52_low": 220.00,
-              "name": "MINIMAX-W", "pe_ratio": 108.58, "market": "HK"},
-    "00700": {"current_price": 485.00, "week52_high": 580.00, "week52_low": 340.00,
-              "name": "腾讯控股", "pe_ratio": 22.5, "market": "HK"},
-    "09988": {"current_price": 138.00, "week52_high": 165.00, "week52_low": 88.00,
-              "name": "阿里巴巴-SW", "pe_ratio": 18.2, "market": "HK"},
-    "03690": {"current_price": 165.00, "week52_high": 215.00, "week52_low": 95.00,
-              "name": "美团-W", "pe_ratio": 28.5, "market": "HK"},
-    "09618": {"current_price": 158.00, "week52_high": 195.00, "week52_low": 112.00,
-              "name": "京东集团-SW", "pe_ratio": 15.8, "market": "HK"},
-    "09888": {"current_price": 98.00, "week52_high": 125.00, "week52_low": 72.00,
-              "name": "百度集团-SW", "pe_ratio": 12.3, "market": "HK"},
-    "09999": {"current_price": 168.00, "week52_high": 210.00, "week52_low": 125.00,
-              "name": "网易-S", "pe_ratio": 18.9, "market": "HK"},
-    "02015": {"current_price": 88.00, "week52_high": 135.00, "week52_low": 65.00,
-              "name": "理想汽车-W", "pe_ratio": 16.5, "market": "HK"},
-    "02318": {"current_price": 52.00, "week52_high": 68.00, "week52_low": 42.00,
-              "name": "中国平安", "pe_ratio": 8.5, "market": "HK"},
-    "00388": {"current_price": 365.00, "week52_high": 420.00, "week52_low": 285.00,
-              "name": "香港交易所", "pe_ratio": 35.2, "market": "HK"},
-}
-
 
 def _to_float(v):
     """安全转 float，失败返回 None"""
@@ -162,13 +112,13 @@ class DataFetcher:
     def get_stock_info(ticker: str, api_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """获取单只股票的完整信息（自动选择数据源）。
 
-        流程: 检测市场 → 调用对应 API → 失败则回退 DEMO_DATA
+        流程: 检测市场 → 调用对应 API（多源降级，全部失败返回 None）
         """
         clean = ticker.strip().upper().replace(".HK", "")
         market = DataFetcher.detect_market(ticker)
 
         result = None
-        source = "demo"
+        source = None
 
         # ── 美股 ──
         if market == "US" and api_key:
@@ -183,60 +133,41 @@ class DataFetcher:
 
         # ── A 股 ──
         elif market == "CN":
-            result = DataFetcher._get_eastmoney_quote(clean)
-            source = "eastmoney"
-            if not result:
-                result = DataFetcher._get_tencent_quote(clean, "CN")
-                source = "tencent"
-            if result:
-                result["market"] = "CN"
-                result["source"] = source
-                sector = _SECTOR_MAP.get(clean)
-                if sector:
-                    result["sector"] = sector
+            result = DataFetcher._fetch_cn_hk(clean, "CN")
 
         # ── 港股 ──
         elif market == "HK":
-            result = DataFetcher._get_eastmoney_hk_quote(clean)
-            source = "eastmoney"
-            if not result:
-                result = DataFetcher._get_tencent_quote(clean, "HK")
-                source = "tencent"
+            result = DataFetcher._fetch_cn_hk(clean, "HK")
+
+        # 所有源都失败 → 如实返回 None（不造假数据）
+        return result
+
+    @staticmethod
+    def _fetch_cn_hk(ticker: str, market: str) -> Optional[Dict[str, Any]]:
+        """CN/HK 实时行情：东财 + 腾讯双源，按用户配置（datasource.realtime）排序"""
+        eastmoney = (DataFetcher._get_eastmoney_quote if market == "CN"
+                     else DataFetcher._get_eastmoney_hk_quote)
+        try:
+            from datasource_config import get_override
+            override = get_override("realtime")
+        except Exception:
+            override = None
+        if override == "tencent":
+            chain = [("tencent", lambda: DataFetcher._get_tencent_quote(ticker, market)),
+                     ("eastmoney", lambda: eastmoney(ticker))]
+        else:
+            chain = [("eastmoney", lambda: eastmoney(ticker)),
+                     ("tencent", lambda: DataFetcher._get_tencent_quote(ticker, market))]
+        for name, fn in chain:
+            result = fn()
             if result:
-                result["market"] = "HK"
-                result["source"] = source
-                sector = _SECTOR_MAP.get(clean)
+                result["market"] = market
+                result["source"] = name
+                sector = _SECTOR_MAP.get(ticker)
                 if sector:
                     result["sector"] = sector
-
-        # ── 回退: 演示数据 ──
-        if not result and clean in DEMO_DATA:
-            logger.info("Falling back to DEMO_DATA for %s (market=%s, API returned no data)", clean, market)
-            demo = dict(DEMO_DATA[clean])
-            base_price = demo.get("current_price", 0)
-            dynamic_price = DataFetcher._dynamic_demo_price(clean, base_price)
-            dynamic_change = round((dynamic_price - base_price) / base_price * 100, 2)
-
-            demo["ticker"] = clean
-            demo["market"] = demo.get("market", market)
-            demo["source"] = "demo"
-            demo["current_price"] = dynamic_price
-            demo["change_pct"] = dynamic_change
-            demo["week52_high_date"] = demo.get("week52_high_date", "-")
-            demo["week52_low_date"] = demo.get("week52_low_date", "-")
-            demo["drawdown"] = DataFetcher.calculate_drawdown(
-                dynamic_price, demo.get("week52_high", 0))
-            demo["distance_low_pct"] = DataFetcher._calc_distance_low(
-                dynamic_price, demo.get("week52_low", 0))
-            demo["last_updated"] = datetime.now().isoformat()
-            if "sector" not in demo:
-                demo["sector"] = _SECTOR_MAP.get(clean)
-            if "market_status" not in demo:
-                demo["market_status"] = DataFetcher.get_market_status(
-                    demo.get("drawdown"))
-            return demo
-
-        return result
+                return result
+        return None
 
     # ── Finnhub 美股 ──────────────────────────────────────────
 
@@ -686,21 +617,6 @@ class DataFetcher:
             return None, None, None, None
 
     # ── 工具方法 ──────────────────────────────────────────────
-
-    @staticmethod
-    def _dynamic_demo_price(ticker: str, base_price: float) -> float:
-        """根据 ticker + 当前分钟生成动态价格（随机游走）。
-
-        使用 ticker + 年月日时分 做种子，保证同 ticker 同分钟内一致，
-        跨分钟变化幅度不超过 base 的 ±3%。
-        """
-        now = datetime.now()
-        seed_str = f"{ticker}-{now.year}-{now.month}-{now.day}-{now.hour}-{now.minute}"
-        seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16) % (2 ** 31)
-        rng = random.Random(seed)
-        # 随机游走：基础价 × [0.97, 1.03]
-        jitter = rng.uniform(-0.03, 0.03)
-        return round(base_price * (1 + jitter), 2)
 
     @staticmethod
     def calculate_drawdown(current_price: Optional[float], week52_high: Optional[float]) -> Optional[float]:

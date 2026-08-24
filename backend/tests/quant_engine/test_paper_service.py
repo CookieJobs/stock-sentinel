@@ -37,7 +37,7 @@ def _fake_info(ticker):
     if ticker in PRICES:
         price, market = PRICES[ticker]
         return {"source": "tencent", "current_price": price, "market": market}
-    return {"source": "demo", "current_price": 10.0, "market": "CN"}
+    return None   # 无真实行情
 
 
 def test_buy_sell_flow():
@@ -87,15 +87,15 @@ def test_buy_sell_flow():
         _restore_db()
 
 
-def test_demo_price_rejected():
-    """demo 假数据拒绝成交"""
+def test_no_price_rejected():
+    """无真实行情拒绝成交"""
     tmp = _use_tmp_db()
     try:
         ps.DF.get_stock_info = staticmethod(_fake_info)
         pid = ps.create_portfolio("测试", 10000)["id"]
         try:
-            ps.trade(pid, "999999", "buy", 10)   # 不在 PRICES → demo
-            assert False, "应拒绝 demo 数据成交"
+            ps.trade(pid, "999999", "buy", 10)   # 不在 PRICES → None
+            assert False, "应拒绝无行情成交"
         except ValueError:
             pass
     finally:
@@ -119,7 +119,7 @@ def test_close_and_delete():
 
 
 if __name__ == "__main__":
-    tests = [test_buy_sell_flow, test_demo_price_rejected, test_close_and_delete]
+    tests = [test_buy_sell_flow, test_no_price_rejected, test_close_and_delete]
     passed = 0
     for fn in tests:
         try:

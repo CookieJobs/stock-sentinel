@@ -92,12 +92,11 @@ def test_record_idempotent_same_bucket():
     assert row["current_price"] == 205.0
 
 
-def test_demo_not_recorded():
-    """demo 回退数据不落库（与 monitor 守卫语义一致）"""
+def test_none_not_recorded():
+    """无数据不落库"""
     from monitor import StockMonitor
     _init_db()
     m = StockMonitor()
-    m._record_price_point(_fake_data(source="demo"))
     m._record_price_point(None)
     assert _count() == 0
 
@@ -158,7 +157,7 @@ if __name__ == "__main__":
         test_bucket_alignment,
         test_record_point_fields,
         test_record_idempotent_same_bucket,
-        test_demo_not_recorded,
+        test_none_not_recorded,
         test_retention_cleanup,
         test_api_flow,
     ]

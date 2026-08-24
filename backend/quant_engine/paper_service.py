@@ -1,7 +1,7 @@
 """模拟交易（Paper Trading）服务 — 组合 / 持仓 / 成交 / 净值
 
 规则（v1 简化）：
-- 以真实行情成交（DataFetcher，demo 假数据拒绝交易）
+- 以真实行情成交（DataFetcher，无真实行情拒绝交易）
 - buy：现金足够即可；sell：不超过持仓；卖出实现盈亏计入 realized_pnl
 - 净值 = 现金 + Σ 持仓市值（mark-to-market 时用最新价）
 """
@@ -79,9 +79,9 @@ def delete_portfolio(portfolio_id: int) -> bool:
 
 
 def _live_price(ticker: str):
-    """真实行情价格；demo 假数据返回 None（拒绝交易）"""
+    """真实行情价格；无真实行情返回 None（拒绝交易）"""
     info = DF.get_stock_info(ticker)
-    if not info or info.get("source") == "demo":
+    if not info:
         return None, None
     return info.get("current_price"), info.get("market")
 
@@ -171,7 +171,7 @@ def _mark_prices(positions: list) -> dict:
     prices = {}
     for p in positions:
         info = DF.get_stock_info(p["ticker"])
-        if info and info.get("source") != "demo" and info.get("current_price"):
+        if info and info.get("current_price"):
             prices[p["ticker"]] = info["current_price"]
     return prices
 

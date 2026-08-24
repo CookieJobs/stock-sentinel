@@ -69,6 +69,22 @@ def screen_stocks(payload: dict):
 
 @router.get("/industries")
 def list_industries():
-    """列出常见行业（前端筛选用）"""
-    from ..data_source.factor_source import MockFactorSource
-    return {"industries": MockFactorSource.INDUSTRIES}
+    """列出常见行业（前端筛选用，取真实数据去重，空时返回静态兜底列表）"""
+    from ..db import get_quant_db
+    db = get_quant_db()
+    try:
+        rows = db.execute(
+            "SELECT DISTINCT industry FROM daily_metrics WHERE industry IS NOT NULL "
+            "AND trade_date = (SELECT MAX(trade_date) FROM daily_metrics) ORDER BY industry"
+        ).fetchall()
+    finally:
+        db.close()
+    industries = [r["industry"] for r in rows]
+    if not industries:
+        industries = [
+            "银行", "白酒", "地产", "汽车", "医药", "半导体", "互联网", "保险",
+            "电力", "煤炭", "石油", "钢铁", "有色金属", "化工", "建材",
+            "家电", "食品饮料", "纺织服饰", "传媒", "通信", "计算机", "电子",
+            "机械设备", "国防军工", "农林牧渔", "环保", "物流", "零售",
+        ]
+    return {"industries": industries}

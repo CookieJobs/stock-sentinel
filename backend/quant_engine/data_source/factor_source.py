@@ -248,92 +248,6 @@ class TushareFactorSource(FactorSourceBase):
         return df
 
 
-class MockFactorSource(FactorSourceBase):
-    """Mock 全 A 股列表（开发演示，Tushare + AkShare 不可用时使用）
-
-    生成 ~5000 只"看似真实"的股票数据，含 ticker / name / industry / PE / PB / 换手率 / 市值 / 涨跌
-    行业分布与现实 A 股大致一致
-    """
-
-    name = "mock"
-    INDUSTRIES = [
-        "银行", "白酒", "地产", "汽车", "医药", "半导体", "互联网", "保险",
-        "电力", "煤炭", "石油", "钢铁", "有色金属", "化工", "建材",
-        "家电", "食品饮料", "纺织服饰", "传媒", "通信", "计算机", "电子",
-        "机械设备", "国防军工", "农林牧渔", "环保", "物流", "零售",
-    ]
-    # ticker 段位和真实股票大致匹配
-    SH_PREFIXES = ["600", "601", "603", "605"]
-    SZ_PREFIXES = ["000", "001", "002", "003", "300", "301"]
-
-    def get_universe(self) -> pd.DataFrame:
-        random.seed(42)
-        rows = []
-        # 沪市 ~2000 只
-        for prefix in self.SH_PREFIXES:
-            for _ in range(500):
-                ticker = f"{prefix}{random.randint(100, 999)}"
-                rows.append(self._gen_row(ticker, "SH"))
-        # 深市 ~3000 只
-        for prefix in self.SZ_PREFIXES:
-            for _ in range(500):
-                ticker = f"{prefix}{random.randint(100, 999)}"
-                rows.append(self._gen_row(ticker, "SZ"))
-        df = pd.DataFrame(rows)
-        # 去重
-        df = df.drop_duplicates(subset=["ticker"]).reset_index(drop=True)
-        return df
-
-    def _gen_row(self, ticker: str, exchange: str) -> dict:
-        # 真实分布：银行 PE 低、半导体 PE 高、白酒 30+
-        industry = random.choice(self.INDUSTRIES)
-        if industry == "银行":
-            pe = random.uniform(4, 8)
-            pb = random.uniform(0.5, 1.2)
-            roe = random.uniform(0.08, 0.15)
-        elif industry == "白酒":
-            pe = random.uniform(15, 40)
-            pb = random.uniform(3, 8)
-            roe = random.uniform(0.15, 0.30)
-        elif industry == "半导体":
-            pe = random.uniform(40, 200)
-            pb = random.uniform(3, 15)
-            roe = random.uniform(0.05, 0.20)
-        elif industry == "互联网":
-            pe = random.uniform(15, 60)
-            pb = random.uniform(2, 8)
-            roe = random.uniform(0.10, 0.25)
-        elif industry == "地产":
-            pe = random.uniform(3, 30)
-            pb = random.uniform(0.3, 2.0)
-            roe = random.uniform(0.0, 0.15)
-        else:
-            pe = random.uniform(10, 80)
-            pb = random.uniform(1, 6)
-            roe = random.uniform(0.03, 0.20)
-
-        market_cap = random.uniform(20, 5000)  # 亿
-        return {
-            "ticker": ticker,
-            "name": f"{industry}股票{ticker[-3:]}",
-            "industry": industry,
-            "market": "CN",
-            "exchange": exchange,
-            "price": round(random.uniform(2, 300), 2),
-            "change_pct": round(random.gauss(0, 3), 2),
-            "pe_ttm": round(pe, 2),
-            "pb": round(pb, 2),
-            "ps_ttm": round(random.uniform(1, 10), 2),
-            "market_cap": round(market_cap, 2),
-            "float_cap": round(market_cap * random.uniform(0.3, 0.95), 2),
-            "turnover_rate": round(random.uniform(0.1, 8.0), 2),
-            "change_60d": round(random.gauss(0, 20), 2),
-            "change_ytd": round(random.gauss(5, 30), 2),
-            "roe": round(roe, 4),
-            "gross_margin": round(random.uniform(0.1, 0.6), 4),
-        }
-
-
 # 数据源优先级：Tushare > 同花顺估值 > 东财延时 > BaoStock > AkShare > Mock
 # 东财延时（push2delay clist）无 key、无配额，全 A 股 PE/PB/换手/市值/行业/ROE，
 # 在 Tushare 限流时作为真实数据兜底（调研 2026-08-20，见 eastmoney_delay_source.py）
@@ -342,12 +256,14 @@ from .baostock_source import BaoStockFactorSource
 from .eastmoney_delay_source import EastMoneyDelayFactorSource
 from .ths_source import THSValuationFactorSource
 SOURCES = [TushareFactorSource, THSValuationFactorSource, EastMoneyDelayFactorSource,
-           BaoStockFactorSource, AkShareFactorSource, MockFactorSource]
+           BaoStockFactorSource, AkShareFactorSource]
 
 
 def get_factor_source():
-    """按优先级选择第一个可用的数据源"""
-    for src_cls in SOURCES:
+    """按优先级选择第一个可用的数据源（用户可在 /settings 钉住某个源）；
+    全部失败返回 None（不造假数据）"""
+    from datasource_config import ordered_by_preference
+    for src_cls in ordered_by_preference(SOURCES, "factor"):
         try:
             if getattr(src_cls, "required_env", None) and not os.environ.get(src_cls.required_env):
                 continue
@@ -357,5 +273,4 @@ def get_factor_source():
         except Exception as e:
             logger.debug("Source %s not available: %s", src_cls.__name__, e)
             continue
-    # 兜底返回 mock
-    return MockFactorSource()
+    return None

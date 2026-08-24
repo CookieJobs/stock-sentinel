@@ -120,7 +120,7 @@ export default function PaperTrading() {
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-bold">📒 模拟交易（Paper Trading）</h2>
-      <p className="text-xs text-sent-dim">以真实行情成交，不涉及真实资金；demo 假数据会拒绝成交。</p>
+      <p className="text-xs text-sent-dim">以真实行情成交，不涉及真实资金；无真实行情时会拒绝成交。</p>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* 左侧：组合列表 + 创建 */}
