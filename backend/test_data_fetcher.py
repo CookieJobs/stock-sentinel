@@ -48,6 +48,7 @@ _orig_fetch = {
     '_get_eastmoney_quote': DataFetcher._get_eastmoney_quote,
     '_get_eastmoney_hk_quote': DataFetcher._get_eastmoney_hk_quote,
     '_get_tencent_quote': DataFetcher._get_tencent_quote,
+    '_get_yahoo_quote': DataFetcher._get_yahoo_quote,
 }
 for _name in _orig_fetch:
     setattr(DataFetcher, _name, staticmethod(lambda *a, **k: None))
@@ -111,6 +112,71 @@ finally:
     DataFetcher._get_eastmoney_quote = _orig_em3
     DataFetcher._get_tencent_quote = _orig_tq3
     _dsc.get_override = _orig_override
+
+print()
+print('ALL TESTS PASSED')
+
+# test _em_get：https 优先，TLS 被重置时自动降级 http
+import requests as _req
+
+class _FakeResp:
+    def __init__(self, scheme):
+        self.scheme = scheme
+        self.status_code = 200
+
+_orig_session_get = df._SESSION.get
+
+def _fake_get_https_dies(url, **kw):
+    if url.startswith("https://"):
+        raise _req.exceptions.ConnectionError("RemoteDisconnected")
+    return _FakeResp(url.split("://")[0])
+
+df._SESSION.get = _fake_get_https_dies
+try:
+    r = df._em_get("push2.eastmoney.com", "/x", {}, 5)
+    assert r is not None and r.scheme == "http", "https 失败应降级 http"
+    print('em_get https→http fallback: PASS')
+finally:
+    df._SESSION.get = _orig_session_get
+
+df._SESSION.get = lambda url, **kw: _FakeResp(url.split("://")[0])
+try:
+    r = df._em_get("push2.eastmoney.com", "/x", {}, 5)
+    assert r is not None and r.scheme == "https", "https 可用应优先 https"
+    print('em_get https preferred: PASS')
+finally:
+    df._SESSION.get = _orig_session_get
+
+print()
+print('ALL TESTS PASSED')
+
+# test Yahoo 解析（mock chart 响应）
+class _FakeYahooResp:
+    status_code = 200
+    def json(self):
+        return {"chart": {"result": [{
+            "meta": {
+                "symbol": "AAPL", "longName": "Apple Inc.",
+                "regularMarketPrice": 311.67, "chartPreviousClose": 227.76,
+                "fiftyTwoWeekHigh": 344.57, "fiftyTwoWeekLow": 224.69,
+            },
+            "timestamp": [1756051200, 1756137600],
+            "indicators": {"quote": [{"high": [344.57, 300.0], "low": [224.69, 290.0]}]},
+        }]}}
+
+_orig_yh_get = df._SESSION.get
+df._SESSION.get = lambda url, **kw: _FakeYahooResp() if "yahoo.com" in url else _orig_yh_get(url, **kw)
+try:
+    r = DataFetcher._get_yahoo_quote("AAPL")
+    assert r is not None and r["source"] == "yahoo"
+    assert r["name"] == "Apple Inc."
+    assert r["current_price"] == 311.67
+    assert abs(r["change_pct"] - 36.84) < 0.01   # (311.67-227.76)/227.76*100
+    assert r["week52_high"] == 344.57
+    assert r["week52_high_date"] == "2025-08-25"
+    print('Yahoo quote parse: PASS')
+finally:
+    df._SESSION.get = _orig_yh_get
 
 print()
 print('ALL TESTS PASSED')

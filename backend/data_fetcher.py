@@ -21,11 +21,32 @@ if not logger.handlers:
     logger.setLevel(logging.DEBUG)
 
 FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
-# 东财用 http 而非 https：本机/运行环境对 push2/push2his 的 TLS 握手被重置
-# （RemoteDisconnected），http 是实测可通的 workaround。
-# ⚠️ 安全债：行情数据明文传输，待环境 TLS 问题查证后应改回 https（见 CHANGELOG 2026-08-15）。
-EASTMONEY_QUOTE_URL = "http://push2.eastmoney.com/api/qt/stock/get"
-EASTMONEY_KLINE_URL = "http://push2his.eastmoney.com/api/qt/stock/kline/get"
+# 东财域名与路径（https 优先，连接被重置时自动降级 http——见 _em_get）
+EASTMONEY_QUOTE_HOST = "push2.eastmoney.com"
+EASTMONEY_KLINE_HOST = "push2his.eastmoney.com"
+EASTMONEY_QUOTE_PATH = "/api/qt/stock/get"
+EASTMONEY_KLINE_PATH = "/api/qt/stock/kline/get"
+
+
+def _em_get(host: str, path: str, params: dict, timeout: int) -> Optional["requests.Response"]:
+    """东财 GET：https 优先，TLS 握手被重置（RemoteDisconnected）时自动降级 http。
+
+    历史原因（2026-08-15 起）：运行环境的 Clash TUN/网络曾重置东财 https 握手，
+    当时被迫固定 http（明文，安全债）。现改为自动降级——https 可用时走加密通道。
+    """
+    last_err = None
+    for scheme in ("https", "http"):
+        try:
+            return _SESSION.get(
+                f"{scheme}://{host}{path}",
+                params=params,
+                timeout=timeout,
+                headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
+            )
+        except Exception as e:
+            last_err = e
+    logger.warning("EastMoney %s%s failed: %s", host, path, last_err)
+    return None
 
 # 股票名称静态映射（API 兜底）
 _NAME_MAP = {
@@ -121,15 +142,25 @@ class DataFetcher:
         source = None
 
         # ── 美股 ──
-        if market == "US" and api_key:
-            result = DataFetcher._get_finnhub_quote(clean, api_key)
-            if result:
-                result["market"] = "US"
-                result["source"] = "finnhub"
-                source = "finnhub"
-                # sector 优先用 API 返回的 finnhubIndustry，否则用静态映射兜底
-                if not result.get("sector"):
-                    result["sector"] = _SECTOR_MAP.get(clean)
+        if market == "US":
+            if api_key:
+                result = DataFetcher._get_finnhub_quote(clean, api_key)
+                if result:
+                    result["market"] = "US"
+                    result["source"] = "finnhub"
+                    source = "finnhub"
+                    # sector 优先用 API 返回的 finnhubIndustry，否则用静态映射兜底
+                    if not result.get("sector"):
+                        result["sector"] = _SECTOR_MAP.get(clean)
+            if not result:
+                # 第二源：Yahoo Finance（免费无 key）
+                result = DataFetcher._get_yahoo_quote(clean)
+                if result:
+                    result["market"] = "US"
+                    result["source"] = "yahoo"
+                    source = "yahoo"
+                    if not result.get("sector"):
+                        result["sector"] = _SECTOR_MAP.get(clean)
 
         # ── A 股 ──
         elif market == "CN":
@@ -168,6 +199,72 @@ class DataFetcher:
                     result["sector"] = sector
                 return result
         return None
+
+    # ── Yahoo Finance 美股（第二源，免费无 key）────────────────
+
+    @staticmethod
+    def _get_yahoo_quote(ticker: str) -> Optional[Dict[str, Any]]:
+        """Yahoo Finance 美股行情（chart API，1 年日线）；作为 Finnhub 的降级源"""
+        try:
+            resp = _SESSION.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}",
+                params={"range": "1y", "interval": "1d"},
+                timeout=12,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            if resp.status_code != 200:
+                return None
+            result = resp.json()["chart"]["result"][0]
+            meta = result.get("meta") or {}
+            current = meta.get("regularMarketPrice")
+            if not current:
+                return None
+            prev_close = meta.get("chartPreviousClose") or current
+            change_pct = round((current - prev_close) / prev_close * 100, 2) if prev_close else None
+            week52_high = meta.get("fiftyTwoWeekHigh")
+            week52_low = meta.get("fiftyTwoWeekLow")
+
+            # 52 周高低点日期：从日线数组 argmax/argmin 反查（容忍浮点误差）
+            h_date = l_date = None
+            ts = result.get("timestamp") or []
+            quote = (result.get("indicators") or {}).get("quote") or [{}]
+            q = quote[0] if quote else {}
+            highs = q.get("high") or []
+            lows = q.get("low") or []
+            if week52_high and highs:
+                i_high = max((i for i, v in enumerate(highs) if v is not None),
+                             key=lambda i: highs[i], default=None)
+                if i_high is not None and i_high < len(ts):
+                    h_date = datetime.fromtimestamp(ts[i_high]).strftime("%Y-%m-%d")
+            if week52_low and lows:
+                i_low = min((i for i, v in enumerate(lows) if v is not None),
+                            key=lambda i: lows[i], default=None)
+                if i_low is not None and i_low < len(ts):
+                    l_date = datetime.fromtimestamp(ts[i_low]).strftime("%Y-%m-%d")
+
+            drawdown = DataFetcher.calculate_drawdown(current, week52_high)
+            distance_low_pct = DataFetcher._calc_distance_low(current, week52_low)
+            now = datetime.now()
+            return {
+                "ticker": ticker,
+                "name": meta.get("longName") or ticker,
+                "market": "US",
+                "source": "yahoo",
+                "current_price": current,
+                "change_pct": change_pct,
+                "week52_high": week52_high,
+                "week52_low": week52_low,
+                "week52_high_date": h_date,
+                "week52_low_date": l_date,
+                "drawdown": drawdown,
+                "distance_low_pct": distance_low_pct,
+                "pe_ratio": None,
+                "market_status": DataFetcher.get_market_status(drawdown),
+                "last_updated": now.isoformat(),
+            }
+        except Exception:
+            logger.warning("Yahoo quote exception for %s", ticker, exc_info=True)
+            return None
 
     # ── Finnhub 美股 ──────────────────────────────────────────
 
@@ -282,18 +379,17 @@ class DataFetcher:
                 secid = f"0.{ticker}"
 
             # ── 实时报价 ──
-            resp = _SESSION.get(
-                EASTMONEY_QUOTE_URL,
-                params={
+            resp = _em_get(
+                EASTMONEY_QUOTE_HOST, EASTMONEY_QUOTE_PATH,
+                {
                     "secid": secid,
                     "fields": "f43,f57,f58,f162,f170,f171",
                     "invt": "2",
                     "fltt": "1",
                 },
-                timeout=10,
-                headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
+                10,
             )
-            if resp.status_code != 200:
+            if not resp or resp.status_code != 200:
                 return None
             data = resp.json().get("data")
             if not data:
@@ -318,9 +414,9 @@ class DataFetcher:
             week52_low_date = None
 
             try:
-                kresp = _SESSION.get(
-                    EASTMONEY_KLINE_URL,
-                    params={
+                kresp = _em_get(
+                    EASTMONEY_KLINE_HOST, EASTMONEY_KLINE_PATH,
+                    {
                         "secid": secid,
                         "fields1": "f1,f2,f3,f4,f5,f6",
                         "fields2": "f51,f52,f53,f54,f55,f56,f57",
@@ -329,8 +425,7 @@ class DataFetcher:
                         "end": "20500101",
                         "lmt": "300",
                     },
-                    timeout=15,
-                    headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
+                    15,
                 )
                 if kresp.status_code == 200:
                     kdata = kresp.json().get("data")
@@ -404,20 +499,18 @@ class DataFetcher:
             secid = DataFetcher._hk_secid(ticker)
 
             # ── 实时报价 ──
-            resp = _SESSION.get(
-                EASTMONEY_QUOTE_URL,
-                params={
+            resp = _em_get(
+                EASTMONEY_QUOTE_HOST, EASTMONEY_QUOTE_PATH,
+                {
                     "secid": secid,
                     "fields": "f43,f57,f58,f162,f170",
                     "invt": "2",
                     "fltt": "2",
                 },
-                timeout=10,
-                headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
+                10,
             )
-            if resp.status_code != 200:
-                logger.warning("HK quote fetch failed for %s (secid=%s): HTTP %s",
-                               ticker, secid, resp.status_code)
+            if not resp or resp.status_code != 200:
+                logger.warning("HK quote fetch failed for %s (secid=%s)", ticker, secid)
                 return None
             data = resp.json().get("data")
             if not data:
