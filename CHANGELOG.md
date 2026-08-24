@@ -2,6 +2,20 @@
 
 AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加条目。
 
+## 2026-08-20 — 数据源选择 + 移除全部 Demo 假数据
+
+- **数据源选择**（commit 0769eb7）：`/settings` 页可对「实时行情 / 因子 / K线」三个数据域
+  选「自动」或钉住某个源（如实时行情选腾讯）；钉住的源排到链首优先尝试，失败仍自动降级。
+  后端 `datasource_config`（settings 表持久化）+ `GET/PUT /api/quant/datasource/config`。
+  实测：钉住 tencent → source=tencent；auto → 东财优先。
+- **移除全部 demo 假数据**（commit a830b2a）：删 `DEMO_DATA` / `MockFactorSource` /
+  `_dynamic_demo_price` / monitor demo 守卫；所有数据源失败时**如实返回 None/空**，
+  不再出现假数据。因子行业列表改查真实数据。模拟交易「无真实行情拒绝成交」。
+- 测试：test_datasource_config 3/3（新增）+ test_data_fetcher 实时源排序用例；
+  全量回归 **168 passed**；前端 lint + build 通过（产物同步）。
+- 影响说明：若某市场所有源均不可用，页面将显示无数据/报错（不再显示假数据）；
+  可在 `/settings` 手动选择偏好的源。
+
 ## 2026-08-20 — 同花顺四连：K线源 / 财务指标 / 异动归因 / 公司行为
 
 - **K 线源**（`THSKlineSource`，commit 3f227d8）：A股日线官方数据 + 周/月线由日线重采样，

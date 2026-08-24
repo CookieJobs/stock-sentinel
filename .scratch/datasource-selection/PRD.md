@@ -37,13 +37,19 @@ Date: 2026-08-20
 ## Demo 移除范围
 
 - `data_fetcher.py`：删 `DEMO_DATA`、demo 回退分支、`_dynamic_demo_price`、`source="demo"`；
-  全部失败返回 None（调用方如实报错）。
-- `factor_source.py`：删 `MockFactorSource`；SOURCES 移除；`get_factor_source` 全失败返回 None。
-- `api/factors.py`：行业列表改为查 daily_metrics 去重行业（不再用 Mock 静态表）。
-- `monitor.py`：删 demo 守卫（死代码）；`_record_price_point` 简化。
-- `paper_service.py`：demo 拒绝逻辑改为「无真实行情拒绝成交」。
-- 测试同步：test_data_fetcher（demo 段改「全失败→None」）、test_paper_service、test_price_history。
-- 文档：CLAUDE.md 删「Demo data fallback」决策项；PaperTrading 页文案。
+  全部失败返回 None（调用方如实报错）。✅
+- `factor_source.py`：删 `MockFactorSource`；SOURCES 移除；`get_factor_source` 全失败返回 None。✅
+- `api/factors.py`：行业列表改为查 daily_metrics 去重行业（不再用 Mock 静态表）。✅
+- `monitor.py`：删 demo 守卫（死代码）；`_record_price_point` 简化。✅
+- `paper_service.py`：demo 拒绝逻辑改为「无真实行情拒绝成交」。✅
+- 测试同步：test_data_fetcher（demo 段改「全失败→None」）、test_paper_service、test_price_history。✅
+- 文档：CLAUDE.md 删「Demo data fallback」决策项；PaperTrading 页文案。✅
+
+## Todo
+
+- [x] 数据源选择：backend 配置模块 + 三链接入 + API + /settings 页（commit 0769eb7）
+- [x] Demo 移除（commit a830b2a）
+- [x] 测试：test_datasource_config 3/3 + 全量回归 168 passed + lint/build
 
 ## Testing Decisions
 
