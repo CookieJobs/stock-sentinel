@@ -1,3 +1,11 @@
+## 2026-08-25 — 空数据周期清理旧 K 线 series（防旧图残留）
+
+- **空数据周期清理**（commit a521812）：`StockChart.jsx` kline effect 在空数组时先
+  removeSeries 旧 candle/volume 再返回，修复切到空数据周期（如 60m 源不可用）时
+  「暂无数据」提示下残留上一周期旧图的问题（M2 起的老行为）。
+- 验证：Playwright 截图像素对比 — 直开 60m 与从日 K 切换后 60m 的图表区均无 K 线色像素；
+  lint + build 通过（产物同步）。
+
 ## 2026-08-25 — 后端 K 线序列化硬化（NaN/inf 清洗，防图表崩溃第二雷管）
 
 - **K 线序列化硬化**（commit 8772d63）：`kline_service._to_float` 对 None/NaN/±inf 一律返回
