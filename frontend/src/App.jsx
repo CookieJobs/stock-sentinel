@@ -12,6 +12,7 @@ import Risk from './pages/Risk'
 import EventCalendar from './pages/EventCalendar'
 import PaperTrading from './pages/PaperTrading'
 import DataSourceSettings from './pages/DataSourceSettings'
+import ErrorBoundary from './components/ErrorBoundary'
 
 function NavItem({ to, label, icon }) {
   return (
@@ -59,17 +60,19 @@ function App() {
           </div>
         </header>
         <main className="max-w-[1600px] mx-auto px-4 py-6">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/chart" element={<Chart />} />
-            <Route path="/screener" element={<Screener />} />
-            <Route path="/backtest" element={<Backtest />} />
-            <Route path="/portfolio" element={<Portfolio />} />
-            <Route path="/risk" element={<Risk />} />
-            <Route path="/events" element={<EventCalendar />} />
-            <Route path="/paper" element={<PaperTrading />} />
-            <Route path="/settings" element={<DataSourceSettings />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/chart" element={<Chart />} />
+              <Route path="/screener" element={<Screener />} />
+              <Route path="/backtest" element={<Backtest />} />
+              <Route path="/portfolio" element={<Portfolio />} />
+              <Route path="/risk" element={<Risk />} />
+              <Route path="/events" element={<EventCalendar />} />
+              <Route path="/paper" element={<PaperTrading />} />
+              <Route path="/settings" element={<DataSourceSettings />} />
+            </Routes>
+          </ErrorBoundary>
         </main>
       </div>
     </BrowserRouter>

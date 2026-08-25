@@ -7,7 +7,7 @@
  * Legend: 十字光标移动显示 OHLC + 主图指标 + 振荡器
  */
 import { useEffect, useRef, useState } from 'react'
-import { createChart, ColorType, CrosshairMode, LineSeries, HistogramSeries, CandlestickSeries, BarSeries } from 'lightweight-charts'
+import { createChart, ColorType, CrosshairMode, LineSeries, HistogramSeries, CandlestickSeries } from 'lightweight-charts'
 
 const COLORS = {
   background: '#161822',
@@ -206,7 +206,7 @@ export default function StockChart({
     oscKeys.forEach(({ key, color, type }) => {
       const ind = indicators[key]
       if (!ind || !ind.values) return
-      const seriesType = type === 'bar' ? BarSeries : LineSeries
+      const seriesType = type === 'bar' ? HistogramSeries : LineSeries
       const series = chart.addSeries(seriesType, {
         color,
         lineWidth: 2,
@@ -214,11 +214,8 @@ export default function StockChart({
         priceLineVisible: false,
         lastValueVisible: true,
       }, 1)
-      if (type === 'bar') {
-        series.setData(ind.values.map(v => ({ time: v.time, value: v.value, open: v.value, close: v.value })))
-      } else {
-        series.setData(ind.values.map(v => ({ time: v.time, value: v.value })))
-      }
+      // HistogramSeries 数据只需 {time, value}（MACD 柱正确类型；BarSeries 需 high/low 会触发 v5 断言崩溃）
+      series.setData(ind.values.map(v => ({ time: v.time, value: v.value })))
       seriesRef.current[`osc_${key}`] = series
     })
   }, [oscillator, indicators])
