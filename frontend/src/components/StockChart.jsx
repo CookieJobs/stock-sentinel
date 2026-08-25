@@ -115,7 +115,19 @@ export default function StockChart({
   // 渲染 K 线 + 成交量（主图 pane 0）
   useEffect(() => {
     const chart = chartRef.current
-    if (!chart || !kline.length) return
+    if (!chart) return
+    // 空数据（如分钟周期源不可用）：清理旧 series，避免"暂无数据"提示下残留上一周期的旧图
+    if (!kline.length) {
+      if (seriesRef.current.candle) {
+        chart.removeSeries(seriesRef.current.candle)
+        delete seriesRef.current.candle
+      }
+      if (seriesRef.current.volume) {
+        chart.removeSeries(seriesRef.current.volume)
+        delete seriesRef.current.volume
+      }
+      return
+    }
     if (seriesRef.current.candle) chart.removeSeries(seriesRef.current.candle)
     if (seriesRef.current.volume) chart.removeSeries(seriesRef.current.volume)
 
