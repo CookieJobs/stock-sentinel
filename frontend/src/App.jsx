@@ -39,7 +39,7 @@ function App() {
         <header className="border-b border-sent-border bg-sent-card">
           <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center gap-6">
             <Link to="/" className="flex items-center gap-2">
-              <span className="text-2xl">📉</span>
+              <span className="text-2xl">📈</span>
               <h1 className="text-lg font-bold text-white">StockSentinel</h1>
               <span className="text-xs text-sent-dim bg-sent-border/30 px-2 py-0.5 rounded">量化平台 v0.3</span>
             </Link>
