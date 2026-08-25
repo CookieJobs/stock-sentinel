@@ -1,3 +1,12 @@
+## 2026-08-25 — 图表防御加固（数据清洗 + 空数据提示）
+
+- **图表防御加固**（commit bb5a54c）：`StockChart.jsx` K 线/成交量/指标 setData 前用
+  `isFiniteBar`/`isFinitePoint` 过滤 NaN/undefined 值，防止脏数据直接进入 lightweight-charts
+  触发断言崩溃（白屏根因的同族风险）；`Chart.jsx` 后端返回空 kline（如分钟周期数据源不可用）
+  时显示「暂无数据」提示，不再静默空图。
+- 验证：Playwright 实测 /chart 默认渲染 11 canvas 零错误；切 60m 显示暂无数据提示不崩；
+  切回日 K 恢复；lint + build 通过（产物同步）。
+
 ## 2026-08-25 — 修复 /chart 页面白屏（MACD 振荡器崩溃 + 错误边界）
 
 - **修复 /chart 白屏**（commit d5aab8f）：`StockChart.jsx` MACD.bar 振荡器原用 BarSeries 渲染但
