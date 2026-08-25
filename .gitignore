@@ -74,3 +74,6 @@ test_write.txt
 
 # npm 本地缓存（沙箱内安装依赖用）
 frontend/.npm-cache/
+
+# AgentTeams 团队运行状态（临时）
+.agent-teams/
