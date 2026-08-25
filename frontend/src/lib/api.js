@@ -70,6 +70,16 @@ export const factors = {
                                                    }),
 }
 
+// ── Search（股票搜索：代码/名称） ───────────────────
+export const search = {
+  // q: 代码 / 中文名 / 拼音缩写；opts: { limit, market }
+  stocks: (q, opts = {}) => get('/api/quant/search', {
+    q,
+    limit: opts.limit || 10,
+    market: opts.market,
+  }),
+}
+
 // ── K-line（M1） ──────────────────────────────────
 //
 // withIndicators(ticker, opts, specs):
@@ -112,4 +122,4 @@ export const risk = {
                                                      }),
 }
 
-export default { backtest, factors, kline, portfolios, risk }
+export default { backtest, factors, kline, portfolios, risk, search }

@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import StockChart from '../components/StockChart'
-import { kline } from '../lib/api'
+import { kline, search } from '../lib/api'
 
 const PERIODS = [
   { value: '1d',  label: '日 K' },
@@ -69,6 +69,10 @@ export default function Chart() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [inputTicker, setInputTicker] = useState(ticker)
+  const [stockName, setStockName] = useState('')      // 当前股票名称（搜索/反查解析）
+  const [suggestions, setSuggestions] = useState([])  // 搜索下拉候选
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [searching, setSearching] = useState(false)
 
   // 加载 K 线 + 指标（含当前 oscillator）
   useEffect(() => {
@@ -98,10 +102,61 @@ export default function Chart() {
     return () => { cancelled = true }
   }, [ticker, market, period, adj, activeIndicators, oscillator])
 
+  // 输入联想搜索（300ms 防抖；输入等于当前代码时不再弹下拉）
+  useEffect(() => {
+    const q = inputTicker.trim()
+    if (!q || q.toUpperCase() === ticker.toUpperCase()) {
+      setSuggestions([])
+      setShowDropdown(false)
+      return
+    }
+    const timer = setTimeout(() => {
+      setSearching(true)
+      search.stocks(q, { limit: 8 })
+        .then(data => {
+          setSuggestions(data.results || [])
+          setShowDropdown(true)
+        })
+        .catch(() => { setSuggestions([]); setShowDropdown(false) })
+        .finally(() => setSearching(false))
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [inputTicker, ticker])
+
+  // 深链/刷新时按 (ticker, market) 反查名称，页头显示「名称 + 代码」
+  useEffect(() => {
+    let cancelled = false
+    setStockName('')
+    search.stocks(ticker, { limit: 5, market })
+      .then(data => {
+        if (cancelled) return
+        const hit = (data.results || []).find(r => r.ticker.toUpperCase() === ticker.toUpperCase())
+        if (hit) setStockName(hit.name)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [ticker, market])
+
+  // 选中下拉结果：跳转 + 记名称
+  function selectStock(item) {
+    setInputTicker(item.ticker)
+    setStockName(item.name)
+    setMarket(item.market)
+    setShowDropdown(false)
+    setSearchParams({ ticker: item.ticker, period })
+  }
+
   function handleTickerSubmit(e) {
     e.preventDefault()
     const t = inputTicker.trim().toUpperCase()
     if (!t) return
+    if (suggestions.length > 0) {
+      // 有候选：精确代码匹配优先，否则选第一条（东财按相关性排序）
+      const exact = suggestions.find(s => s.ticker.toUpperCase() === t)
+      selectStock(exact || suggestions[0])
+      return
+    }
+    // 无候选：当作代码直接查询（保持原行为）
     const m = detectMarket(t)
     setMarket(m)
     setSearchParams({ ticker: t, period })
@@ -112,14 +167,40 @@ export default function Chart() {
       {/* 控制栏 */}
       <div className="bg-sent-card border border-sent-border rounded-lg p-4">
         <div className="flex flex-wrap items-center gap-3">
-          {/* Ticker 输入 */}
+          {/* Ticker/名称 输入（联想下拉） */}
           <form onSubmit={handleTickerSubmit} className="flex gap-2">
-            <input
-              value={inputTicker}
-              onChange={e => setInputTicker(e.target.value)}
-              placeholder="代码（600519 / AAPL / 00700）"
-              className="bg-sent-bg border border-sent-border rounded px-3 py-1.5 text-sm w-56 focus:outline-none focus:border-sent-blue"
-            />
+            <div className="relative">
+              <input
+                value={inputTicker}
+                onChange={e => setInputTicker(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') setShowDropdown(false) }}
+                onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                placeholder="代码 / 名称（600519、茅台、AAPL）"
+                className="bg-sent-bg border border-sent-border rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-sent-blue"
+              />
+              {showDropdown && (
+                <div className="absolute z-20 mt-1 w-72 max-h-72 overflow-auto bg-sent-card border border-sent-border rounded shadow-lg">
+                  {searching && suggestions.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-sent-dim">搜索中…</div>
+                  )}
+                  {!searching && suggestions.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-sent-dim">未找到匹配的股票</div>
+                  )}
+                  {suggestions.map(s => (
+                    <button
+                      key={`${s.market}:${s.ticker}`}
+                      type="button"
+                      onMouseDown={e => { e.preventDefault(); selectStock(s) }}
+                      className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-sent-blue/10"
+                    >
+                      <span className="text-sm text-white flex-1 truncate">{s.name}</span>
+                      <span className="text-xs font-mono text-sent-dim">{s.ticker}</span>
+                      <span className="text-xs">{MARKETS.find(m => m.value === s.market)?.label.split(' ')[0] || s.market}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button type="submit" className="bg-sent-blue text-sent-bg px-4 py-1.5 rounded text-sm font-bold hover:opacity-80">
               查 询
             </button>
@@ -142,9 +223,13 @@ export default function Chart() {
             ))}
           </div>
 
-          {/* 市场标识 */}
-          <div className="ml-auto text-sm text-sent-dim">
-            {MARKETS.find(m => m.value === market)?.label || market}
+          {/* 当前股票：名称 + 代码 + 市场 */}
+          <div className="ml-auto text-sm flex items-center gap-2">
+            {stockName && <span className="text-white font-semibold">{stockName}</span>}
+            <span className="font-mono text-sent-dim">{ticker}</span>
+            <span className="text-xs px-1.5 py-0.5 rounded bg-sent-bg border border-sent-border text-sent-dim">
+              {MARKETS.find(m => m.value === market)?.label || market}
+            </span>
           </div>
         </div>
 
