@@ -103,6 +103,31 @@ def factor_beta(stock_ret: pd.Series, bench_ret: pd.Series, period: int = 60) ->
     return cov / var.replace(0, np.nan)
 
 
+# ── 因子白话说明 ───────────────────────────────────────────────
+# 给新手用户看的大白话解释 + 展示单位。单位以当前库实测为准：
+# 估值类为倍；ROE/毛利率等财务类与换手率为百分比原值；动量/波动类为小数比例。
+
+FACTOR_EXPLAINERS = {
+    "pe_ttm":       {"desc": "市盈率 = 股价 ÷ 每股一年赚的钱，代表按当前赚钱速度多少年回本。越小越便宜。", "unit": "倍"},
+    "pb":           {"desc": "市净率 = 股价 ÷ 每股净资产，代表你为公司「家底」付了多少倍价格。越小越便宜。", "unit": "倍"},
+    "ps_ttm":       {"desc": "市销率 = 股价 ÷ 每股一年的销售额，还没赚钱的公司常用它衡量贵不贵。越小越便宜。", "unit": "倍"},
+    "roe":          {"desc": "净资产收益率 = 公司用股东的钱一年赚了百分之几，像「存款利率」。越高说明赚钱能力越强。", "unit": "%"},
+    "roa":          {"desc": "总资产收益率 = 公司用全部资产（含借来的钱）一年赚了百分之几。越高说明资产利用效率越高。", "unit": "%"},
+    "revenue_yoy":  {"desc": "营收同比增速 = 今年收入比去年同期多百分之几。越高说明生意扩张越快。", "unit": "%"},
+    "profit_yoy":   {"desc": "净利润同比增速 = 今年利润比去年同期多百分之几。越高说明赚钱增长越快。", "unit": "%"},
+    "gross_margin": {"desc": "毛利率 = 卖 100 元货能毛赚多少（扣除直接成本后）。越高说明产品越有定价权。", "unit": "%"},
+    "net_margin":   {"desc": "净利率 = 卖 100 元货最后净赚多少（扣除所有成本税费后）。越高说明最终赚钱能力越强。", "unit": "%"},
+    "debt_ratio":   {"desc": "资产负债率 = 公司资产里有多少是借来的。越低说明财务越稳健、抗风险能力越强。", "unit": "%"},
+    "momentum_20d": {"desc": "20 日动量 = 过去 20 个交易日股价涨了百分之几（0.05 = 涨 5%）。正数代表近期在涨。", "unit": "比例"},
+    "momentum_60d": {"desc": "60 日动量 = 过去 60 个交易日股价涨了百分之几。衡量中期趋势。", "unit": "比例"},
+    "turnover_rate":{"desc": "换手率 = 当天有多少比例的股票被买卖。太高说明炒作激烈，太低说明无人问津。", "unit": "%"},
+    "atr_pct":      {"desc": "波动幅度 = 每天价格平均上下波动百分之几（0.03 = 3%）。越低说明走势越平稳。", "unit": "比例"},
+    "hist_vol_20d": {"desc": "历史波动率 = 过去 20 天股价波动的剧烈程度（年化）。越低说明越稳定。", "unit": "比例"},
+    # 附加筛选字段（daily_metrics 直供，不参与因子计算）
+    "market_cap":   {"desc": "总市值 = 这家公司目前值多少钱（亿元）。越大说明公司越大、越稳。", "unit": "亿"},
+}
+
+
 # ── 因子注册表 ─────────────────────────────────────────────────
 
 FACTOR_REGISTRY = {
@@ -136,6 +161,8 @@ def list_factors() -> list[dict]:
             "name": name,
             "category": meta["category"],
             "direction": meta["direction"],  # asc=越大越好, desc=越小越好
+            "description_zh": FACTOR_EXPLAINERS.get(name, {}).get("desc", ""),
+            "unit": FACTOR_EXPLAINERS.get(name, {}).get("unit", ""),
         }
         for name, meta in FACTOR_REGISTRY.items()
     ]
