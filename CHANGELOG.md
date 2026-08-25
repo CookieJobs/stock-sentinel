@@ -1,3 +1,16 @@
+## 2026-08-25 — 后端 K 线序列化硬化（NaN/inf 清洗，防图表崩溃第二雷管）
+
+- **K 线序列化硬化**（commit 8772d63）：`kline_service._to_float` 对 None/NaN/±inf 一律返回
+  None（原实现 inf 穿透，JSON allow_nan=False 直接 500）；新增 `_is_finite` 过滤指标值
+  （inf 会穿过 pd.notna）；`get_kline_with_indicators` 序列化前 replace(inf→nan) +
+  dropna(OHLC 四列)；`ths_source._resample_kline` dropna 扩到四列（原只 close，THS
+  to_numeric(errors='coerce') 产 NaN 时 open/high/low 的 NaN 组会存活 → JSON null →
+  前端 lightweight-charts 断言 got=object 崩 K 线主图）。
+- 测试：新增 test_kline_service_sanitize.py 7 个单测（_to_float/_is_finite/OHLC 行丢弃/
+  inf 指标值过滤/重采样四列 dropna），7/7 通过；全量 172 passed（3 个 test_factor_source
+  失败为沙箱写 ~/tk.csv 被拒，与本次无关）；test_data_fetcher.py ALL TESTS PASSED。
+- 注意：后端需重启生效。
+
 ## 2026-08-25 — 图表防御加固（数据清洗 + 空数据提示）
 
 - **图表防御加固**（commit bb5a54c）：`StockChart.jsx` K 线/成交量/指标 setData 前用
