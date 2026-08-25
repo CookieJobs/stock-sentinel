@@ -1,3 +1,9 @@
+## 2026-08-25 — 站点图标改为上涨趋势 📈
+
+- **图标换新**（commit aa893a6）：favicon.svg 折线方向反转（下降 → 上涨），端点圆点由
+  红色警示改为绿色；App.jsx 侧边栏 logo emoji 📉 → 📈；构建产物同步。
+- 验证：npm run lint + npm run build 通过。
+
 ## 2026-08-25 — 空数据周期清理旧 K 线 series（防旧图残留）
 
 - **空数据周期清理**（commit a521812）：`StockChart.jsx` kline effect 在空数组时先
