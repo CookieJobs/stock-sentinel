@@ -124,7 +124,7 @@ export default function StockChart({
       borderUpColor: COLORS.upColor, borderDownColor: COLORS.downColor,
       wickUpColor: COLORS.upColor, wickDownColor: COLORS.downColor,
     })
-    candleSeries.setData(kline.map(bar => ({
+    candleSeries.setData(kline.filter(isFiniteBar).map(bar => ({
       time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close,
     })))
 
@@ -135,7 +135,7 @@ export default function StockChart({
     volumeSeries.priceScale().applyOptions({
       scaleMargins: { top: 0.8, bottom: 0 },
     })
-    volumeSeries.setData(kline.map(bar => ({
+    volumeSeries.setData(kline.filter(b => isFiniteBar(b) && Number.isFinite(b.volume)).map(bar => ({
       time: bar.time,
       value: bar.volume || 0,
       color: bar.close >= bar.open ? `${COLORS.upColor}66` : `${COLORS.downColor}66`,
@@ -171,7 +171,7 @@ export default function StockChart({
         priceLineVisible: false,
         lastValueVisible: true,
       }, 0)
-      lineSeries.setData(ind.values.map(v => ({ time: v.time, value: v.value })))
+      lineSeries.setData(ind.values.filter(isFinitePoint).map(v => ({ time: v.time, value: v.value })))
       seriesRef.current[`line_${name}`] = lineSeries
     })
   }, [indicators])
@@ -215,7 +215,7 @@ export default function StockChart({
         lastValueVisible: true,
       }, 1)
       // HistogramSeries 数据只需 {time, value}（MACD 柱正确类型；BarSeries 需 high/low 会触发 v5 断言崩溃）
-      series.setData(ind.values.map(v => ({ time: v.time, value: v.value })))
+      series.setData(ind.values.filter(isFinitePoint).map(v => ({ time: v.time, value: v.value })))
       seriesRef.current[`osc_${key}`] = series
     })
   }, [oscillator, indicators])
@@ -262,6 +262,18 @@ export default function StockChart({
 }
 
 // ── Helpers ─────────────────────────────────────────────────
+
+// 数据清洗：过滤非有限数值（NaN/undefined）的 bar / point，
+// 防止脏数据直接进入 setData 触发 lightweight-charts 断言崩溃
+function isFiniteBar(bar) {
+  return !!bar && bar.time != null &&
+    Number.isFinite(bar.open) && Number.isFinite(bar.high) &&
+    Number.isFinite(bar.low) && Number.isFinite(bar.close)
+}
+
+function isFinitePoint(p) {
+  return !!p && p.time != null && Number.isFinite(p.value)
+}
 
 function isOscillatorName(name) {
   if (name === 'OBV') return true  // OBV 量价类

@@ -205,6 +205,13 @@ export default function Chart() {
         </div>
       )}
 
+      {/* 空数据提示（如分钟周期数据源不可用） */}
+      {!loading && !error && chartData.meta && chartData.meta.row_count === 0 && (
+        <div className="bg-sent-yellow/10 border border-sent-yellow/40 text-sent-yellow rounded p-3 text-sm">
+          ⚠️ 暂无数据：该代码/周期没有可用 K 线（数据源不可用或当前周期不支持）
+        </div>
+      )}
+
       {/* 图表 */}
       <div className="bg-sent-card border border-sent-border rounded-lg overflow-hidden">
         <StockChart
