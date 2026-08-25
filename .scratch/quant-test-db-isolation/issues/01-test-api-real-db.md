@@ -1,6 +1,6 @@
 # Issue 01: 量化测试套件污染真实 DB（test_api 用真实 sentinel.db 而非临时库）
 
-Status: ready-for-agent
+Status: done
 
 ## 描述
 
@@ -26,6 +26,13 @@ trade_date=当日 的 Mock 数据。）
 
 ## 验收条件
 
-- [ ] 跑完 137 测试后真实库无新增/覆盖（对比跑前快照）
-- [ ] `test_factors_refresh` 仍通过（用临时库或 mock 数据源）
-- [ ] 不破坏其他 136 个测试
+- [x] 跑完测试后真实库无新增/覆盖（conftest 重定向临时库 + test_db_isolation 回归保护）
+- [x] `test_factors_refresh` 仍通过（临时库隔离下）
+- [x] 不破坏其他测试（quant_engine 229 passed）
+
+## Comments
+
+- 2026-08-26：完成（commit 5095a5d）。`conftest.py` 在 import 时把 `database.DB_PATH`
+  与 `quant_engine.db.DB_PATH` **同时**重定向到临时库（两处必须指向同一文件，否则
+  quant 表与 v0.2.0 表分裂）；`test_api.py` 新增 `test_db_isolation` 回归保护。
+  TestClient 裸用不跑 lifespan，避免启动 monitor/alerter/briefing 后台线程。

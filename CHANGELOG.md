@@ -1,3 +1,26 @@
+## 2026-08-26 — AI 策略选股：新手也能一键选股
+
+- **新功能**（commit 7e1f133 后端 + c890b83 前端，`.scratch/ai-strategy-screener/`）：
+  /screener 重构为双模式，默认「✨ AI 策略选股（推荐新手）」：
+  - 6 个内置策略卡（人话名字 + tagline + 适用人群 + 风险标签 + 条件 chips），
+    点「用这个策略选股」一键出结果，卡片可展开看每个条件的大白话解释。
+  - 自然语言 AI 生成策略：一句话描述想要的股票（如「低估值的高分红股」）→
+    LLM 转结构化策略 JSON 并严格校验（复用 briefing 的 OpenAI 兼容配置，
+    无 Key 时友好提示，不依赖外部新服务）。
+  - 手动高级模式保留 M3 全部原始功能；指标小词典改为大白话 + 单位。
+  - 数据防御：整列为空的因子自动跳过并如实返回 `skipped_factors`；desc 因子
+    （PE/PB/负债率）未给 min 时默认 min=0，排除负 PE 亏损股（否则「深度低估」
+    把亏损股排最前）；ROE/毛利率显示归一化（兼容百分比/小数两种存储，修掉
+    原 ×100 显示 556% 的问题）。
+  - 测试：`test_screener_strategies.py` 32/32（结构校验 / LLM 生成 monkeypatch /
+    空列跳过 / API 集成）；全量 quant_engine 229 passed（3 个既有 ~/tk.csv
+    沙箱写拒绝失败除外）；lint + build 通过。
+- **顺手修复**（commit 5095a5d，`.scratch/quant-test-db-isolation/`）：量化测试套件
+  DB 隔离 — conftest 重定向临时库 + test_db_isolation 回归保护，跑 pytest 不再
+  读写真实 `data/sentinel.db`。
+- 注意：后端已重启生效；因子数据目前 roe/毛利率只有约 20 只有值（THS 只 enrich
+  自选股），多数策略会显示「条件已跳过」提示，待因子源充实后自动生效。
+
 ## 2026-08-25 — /chart 股票名称搜索 + 名称/代码同显
 
 - **新功能**（commit ce4b022 后端 + f5ce5dc 前端，`.scratch/chart-name-search/`）：
