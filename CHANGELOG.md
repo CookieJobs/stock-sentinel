@@ -1,3 +1,21 @@
+## 2026-08-25 — /chart 股票名称搜索 + 名称/代码同显
+
+- **新功能**（commit ce4b022 后端 + f5ce5dc 前端，`.scratch/chart-name-search/`）：
+  /chart 页原来只能按代码搜索、只显示代码。现在：
+  - 后端 `GET /api/quant/search?q=&limit=&market=`：东财 suggest API（免 key，支持
+    代码/中文名/拼音缩写，覆盖沪深港美）主源 + 本地降级（stocks 自选表 /
+    ts_universe_cache / daily_metrics），按 (market, ticker) 去重，按
+    MktNum/SecurityType/TypeUS 过滤市场（排除指数/债券/Notes/权证）。
+  - 前端搜索框联想下拉（300ms 防抖）：每行「名称 + 代码 + 市场」，点击即跳转；
+    回车有候选时精确代码优先（00700→港股腾讯），无候选保持原直接查询行为。
+  - 页头显示「名称 + 代码 + 市场」；深链/刷新按 (ticker, market) 反查名称。
+- **踩坑**：东财 suggest 用 `requests` 会被 CDN 按 TLS 指纹路由到 2023 陈旧 JSONP 缓存
+  （passport 残留），必须 urllib 直连（https→http 自动降级）。
+- 测试：新增 `test_search.py` 25 个全过；全套 227 passed（5 个既有失败
+  `test_factor_source`/`test_screener_strategies` 为沙箱写 `~/tk.csv` 权限问题，与本次无关）；
+  前端 lint + build 通过；:8000 实测 茅台→600519、00700+market=HK→腾讯控股、AAPL→苹果。
+- 未决：工作区另有他人未提交的 ai-strategy-screener 改动（screener.py 等），未纳入本次提交。
+
 ## 2026-08-25 — 站点图标改为上涨趋势 📈
 
 - **图标换新**（commit aa893a6）：favicon.svg 折线方向反转（下降 → 上涨），端点圆点由
