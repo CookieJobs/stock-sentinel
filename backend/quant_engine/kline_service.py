@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 import logging
+import math
 import threading
 import time
 from collections import OrderedDict
@@ -252,6 +253,16 @@ def get_kline_with_indicators(
     if df.empty:
         return {"kline": [], "indicators": {}, "meta": get_kline_meta(ticker, market, period, adj)}
 
+    # 硬化：丢弃 OHLC 含非有限值（NaN/±inf）的行 —— NaN 序列化为 JSON null，
+    # 前端 lightweight-charts 断言 'must be a number, got=object' 会崩图表（THS
+    # to_numeric(errors='coerce') 可产 NaN，重采样只 dropna close，四列 NaN 组会存活）
+    price_cols = [c for c in ("open", "high", "low", "close") if c in df.columns]
+    if price_cols:
+        df = df.replace([float("inf"), float("-inf")], float("nan"))
+        df = df.dropna(subset=price_cols)
+    if df.empty:
+        return {"kline": [], "indicators": {}, "meta": get_kline_meta(ticker, market, period, adj)}
+
     # 基础 K 线（按 trade_date 升序）
     kline = []
     for _, r in df.iterrows():
@@ -287,7 +298,7 @@ def get_kline_with_indicators(
                             "values": [
                                 {"time": t, "value": _to_float(val)}
                                 for t, val in zip(df["trade_date"], v)
-                                if pd.notna(val)
+                                if _is_finite(val)
                             ],
                         }
                 else:
@@ -297,7 +308,7 @@ def get_kline_with_indicators(
                         "values": [
                             {"time": t, "value": _to_float(val)}
                             for t, val in zip(df["trade_date"], result)
-                            if pd.notna(val)
+                            if _is_finite(val)
                         ],
                     }
             except Exception as e:
@@ -311,9 +322,23 @@ def get_kline_with_indicators(
 
 
 def _to_float(v):
+    """转 float（保留 4 位小数）；None/NaN/±inf 等非有限值一律返回 None。
+
+    原实现只挡 None/NaN，inf 会穿透：JSON 序列化 allow_nan=False 直接 500，
+    且 NaN 序列化为 null 后前端 lightweight-charts 断言 'must be a number' 崩图表。
+    """
     try:
-        if v is None or (isinstance(v, float) and (v != v)):  # NaN
+        f = float(v)
+        if not math.isfinite(f):
             return None
-        return round(float(v), 4)
+        return round(f, 4)
     except (ValueError, TypeError):
         return None
+
+
+def _is_finite(v):
+    """pd.notna 等价 + 有限数值判断（inf/-inf 会穿过 notna，同样是非有限）"""
+    try:
+        return math.isfinite(float(v))
+    except (ValueError, TypeError):
+        return False

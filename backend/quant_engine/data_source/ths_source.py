@@ -300,5 +300,7 @@ def _resample_kline(df: pd.DataFrame, rule: str) -> pd.DataFrame:
         "close": g["close"].last(),
         "volume": g["volume"].sum(),
         "amount": g["amount"].sum(),
-    }).dropna(subset=["close"])
+    # 四列全 dropna：仅 dropna close 时 open/high/low 的 NaN 组会存活，
+    # 序列化为 JSON null 会触发前端 lightweight-charts 断言崩溃
+    }).dropna(subset=["open", "high", "low", "close"])
     return out.reset_index(drop=True)
