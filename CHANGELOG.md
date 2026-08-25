@@ -1,3 +1,16 @@
+## 2026-08-25 — 修复 /chart 页面白屏（MACD 振荡器崩溃 + 错误边界）
+
+- **修复 /chart 白屏**（commit d5aab8f）：`StockChart.jsx` MACD.bar 振荡器原用 BarSeries 渲染但
+  setData 缺 high/low，lightweight-charts v5 dev 构建断言 `Bar series item data value of high must
+  be a number` 在 useEffect 内抛未捕获异常 → App 无错误边界 → React 卸载整棵组件树 → /chart 白屏
+  （dev :5173）。缺陷自 M2 即存在，此前东财 K 线被风控返回空 → StockChart 早退不触发；8/23 接入
+  同花顺 THS 源恢复 K 线后崩溃路径激活（回归）。修复：MACD 柱改用 HistogramSeries（数据只需
+  {time,value}，删 BarSeries import）；根组件 Routes 外包 ErrorBoundary，页面异常显示错误卡片
+  不再整页白屏。
+- 验证：Playwright 无头浏览器实测 /chart — 修复前 pageerror「Bar series item data value of high
+  must be a number」+ root 空；修复后页面完整渲染（11 canvas），console/pageerror 全零，振荡器
+  切换（无/RSI/KDJ/MACD）与周期切换均无错误；前端 lint + build 通过（产物同步）。
+
 # Changelog
 
 AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加条目。
