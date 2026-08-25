@@ -70,6 +70,16 @@ export const factors = {
                                                    }),
 }
 
+// ── Screener AI 策略（v1.1 新手友好） ────────────────
+export const screener = {
+  strategies:   ()                              => get('/api/quant/screener/strategies'),
+  generate:     (prompt)                        => post('/api/quant/screener/strategies/generate', { prompt }),
+  screen:       (strategyId, strategy)          => post('/api/quant/screener/screen', {
+                                                   strategy_id: strategyId,
+                                                   strategy,
+                                                 }),
+}
+
 // ── Search（股票搜索：代码/名称） ───────────────────
 export const search = {
   // q: 代码 / 中文名 / 拼音缩写；opts: { limit, market }
@@ -122,4 +132,4 @@ export const risk = {
                                                      }),
 }
 
-export default { backtest, factors, kline, portfolios, risk, search }
+export default { backtest, factors, screener, kline, portfolios, risk, search }
