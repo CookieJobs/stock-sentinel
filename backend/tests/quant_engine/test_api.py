@@ -6,6 +6,7 @@
 - 关键字段存在
 """
 import sys
+import tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
@@ -19,7 +20,21 @@ from quant_engine.db import init_quant_db
 @pytest.fixture(scope="module")
 def client():
     init_quant_db()
+    # 不用 `with TestClient(app)`：那会触发 lifespan 启动 monitor/alerter/briefing
+    # 后台线程（真实网络 + 写库），裸 TestClient 不跑 lifespan，无副作用
     return TestClient(app)
+
+
+def test_db_isolation():
+    """回归保护：测试套件必须走临时库，绝不读写真实 data/sentinel.db"""
+    import database
+    import quant_engine.db as qdb
+
+    paths = {"database.DB_PATH": database.DB_PATH, "quant_engine.db.DB_PATH": qdb.DB_PATH}
+    # 两处引用必须指向同一个临时库（否则 quant 表与 v0.2.0 表分裂）
+    assert len(set(map(str, paths.values()))) == 1, f"DB 路径分裂: {paths}"
+    for name, p in paths.items():
+        assert str(p).startswith(tempfile.gettempdir()), f"{name} 指向真实库: {p}"
 
 
 # ── Health ──────────────────────────────────────────────
