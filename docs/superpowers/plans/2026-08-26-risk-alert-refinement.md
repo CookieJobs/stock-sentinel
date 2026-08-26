@@ -33,7 +33,7 @@
 - [x] **Step 2: Run `python backend/test_alerter.py`** and confirm the tests fail because the current implementation rejects positive thresholds and lacks alert state.
 - [x] **Step 3: Add additive SQLite schema and state-machine implementation** with `alert_enabled`, `alert_state`, historical snapshots, freshness and anomaly guards.
 - [x] **Step 4: Run `python backend/test_alerter.py`** and confirm all new alert cases pass.
-- [ ] **Step 5: Commit backend implementation and tests** with a Chinese `feat(alert):` message.
+- [x] **Step 5: Commit backend implementation and tests** with a Chinese `feat(alert):` message (`4b3acf9`).
 
 ### Task 2: Surface explicit configuration and alert context
 
@@ -50,7 +50,7 @@
 - [x] **Step 2: Display `未启用` for disabled stocks and breach snapshot information in alert views.**
 - [x] **Step 3: Run `cd frontend && npm run lint`**, fixing only reported errors.
 - [x] **Step 4: Run `cd frontend && npm run build`** to regenerate `backend/static/`.
-- [ ] **Step 5: Commit UI and generated assets** with a Chinese `feat(alert):` message.
+- [x] **Step 5: Commit UI and generated assets** with a Chinese `feat(alert):` message (`62cb5e5`).
 
 ### Task 3: Verify and record the release
 
