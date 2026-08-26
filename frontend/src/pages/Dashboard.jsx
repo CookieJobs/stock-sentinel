@@ -32,8 +32,8 @@ function getChangeClass(val) {
 
 function getDrawdownClass(val) {
   if (val == null) return 'text-sent-dim'
-  if (val >= 5) return 'text-sent-red font-bold'
-  if (val >= 0) return 'text-sent-yellow'
+  if (val <= -20) return 'text-sent-red font-bold'
+  if (val <= -10) return 'text-sent-yellow font-bold'
   return 'text-sent-green'
 }
 
@@ -82,13 +82,15 @@ export default function Dashboard() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [newTicker, setNewTicker] = useState('')
   const [newName, setNewName] = useState('')
-  const [newThreshold, setNewThreshold] = useState('-15')
+  const [newThreshold, setNewThreshold] = useState('15')
+  const [newAlertEnabled, setNewAlertEnabled] = useState(false)
   const [addLoading, setAddLoading] = useState(false)
   const [addError, setAddError] = useState('')
 
   // Edit stock modal
   const [editingStock, setEditingStock] = useState(null)
   const [editThreshold, setEditThreshold] = useState('')
+  const [editAlertEnabled, setEditAlertEnabled] = useState(false)
   const [editLoading, setEditLoading] = useState(false)
   const [editError, setEditError] = useState('')
 
@@ -258,7 +260,8 @@ export default function Dashboard() {
         body: JSON.stringify({
           ticker: newTicker.trim().toUpperCase(),
           name: newName.trim() || undefined,
-          threshold: parseFloat(newThreshold) || -15,
+          threshold: Math.abs(parseFloat(newThreshold)) || 15,
+          alert_enabled: newAlertEnabled,
         }),
       })
       if (!res.ok) {
@@ -268,7 +271,8 @@ export default function Dashboard() {
       setShowAddModal(false)
       setNewTicker('')
       setNewName('')
-      setNewThreshold('-15')
+      setNewThreshold('15')
+      setNewAlertEnabled(false)
       await fetchData()
     } catch (err) {
       setAddError(err.message)
@@ -314,7 +318,8 @@ export default function Dashboard() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          threshold: parseFloat(editThreshold) || -15,
+          threshold: Math.abs(parseFloat(editThreshold)) || 15,
+          alert_enabled: editAlertEnabled,
         }),
       })
       if (!res.ok) {
@@ -323,6 +328,7 @@ export default function Dashboard() {
       }
       setEditingStock(null)
       setEditThreshold('')
+      setEditAlertEnabled(false)
       await fetchData()
     } catch (err) {
       setEditError(err.message)
@@ -396,15 +402,14 @@ export default function Dashboard() {
         : '--'
 
     const overThreshold = stocks.filter((s) => {
-      if (s.drawdown == null || s.threshold == null) return false
-      if (s.threshold >= 0) return false
-      return Math.abs(s.drawdown) >= Math.abs(s.threshold)
+      if (!s.alert_enabled || s.drawdown == null || s.threshold == null) return false
+      return s.threshold > 0 && s.drawdown <= -s.threshold
     }).length
 
     let maxStock = null
-    let maxDrawdown = -Infinity
+    let maxDrawdown = Infinity
     stocks.forEach((s) => {
-      if (s.drawdown != null && s.drawdown > maxDrawdown) {
+      if (s.drawdown != null && s.drawdown < maxDrawdown) {
         maxDrawdown = s.drawdown
         maxStock = s
       }
@@ -425,7 +430,7 @@ export default function Dashboard() {
       s.week52_high != null ? Number(s.week52_high).toFixed(2) : '',
       s.week52_high_date || '',
       s.drawdown != null ? Number(s.drawdown).toFixed(2) : '',
-      s.threshold != null ? Math.abs(s.threshold).toFixed(2) : '',
+      s.alert_enabled && s.threshold != null ? Number(s.threshold).toFixed(2) : '未启用',
       s.pe_ratio != null ? Number(s.pe_ratio).toFixed(1) : '',
       s.distance_low_pct != null ? Number(s.distance_low_pct).toFixed(1) : '',
     ])
@@ -483,7 +488,7 @@ export default function Dashboard() {
           <div className="text-2xl font-bold text-sent-yellow">{stats.avgDrawdown}%</div>
         </div>
         <div className="bg-sent-card border border-sent-border rounded-lg p-4">
-          <div className="text-xs text-sent-dim mb-1">超过阈值</div>
+          <div className="text-xs text-sent-dim mb-1">越过关注线</div>
           <div className="text-2xl font-bold text-sent-red">{stats.overThreshold}</div>
         </div>
         <div className="bg-sent-card border border-sent-border rounded-lg p-4">
@@ -564,7 +569,7 @@ export default function Dashboard() {
               }}
               className="relative px-3 py-1.5 text-xs bg-sent-border/50 text-sent-dim rounded-lg hover:text-white hover:bg-sent-border transition-colors"
             >
-              🔔 告警
+              🔔 风险提醒
               {alertCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-sent-red text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
                   {alertCount > 9 ? '9+' : alertCount}
@@ -728,7 +733,9 @@ export default function Dashboard() {
                       <Sparkline points={historyMap[stock.ticker] ?? null} status={stock.market_status} />
                     </td>
                     <td className="px-3 py-2.5 text-right text-sent-dim whitespace-nowrap">
-                      {stock.threshold != null ? `${Math.abs(stock.threshold)}%` : '--'}
+                      {stock.alert_enabled && stock.threshold != null
+                        ? `${Number(stock.threshold).toFixed(1)}%`
+                        : '未启用'}
                     </td>
                     <td className="px-3 py-2.5 text-right text-sent-dim whitespace-nowrap">
                       {stock.pe_ratio != null ? Number(stock.pe_ratio).toFixed(1) : '--'}
@@ -750,7 +757,8 @@ export default function Dashboard() {
                       <button
                         onClick={() => {
                           setEditingStock(stock)
-                          setEditThreshold(String(Math.abs(stock.threshold) || 15))
+                          setEditThreshold(String(stock.threshold || 15))
+                          setEditAlertEnabled(Boolean(stock.alert_enabled))
                           setEditError('')
                         }}
                         className="text-sent-dim hover:text-sent-yellow transition-colors p-1"
@@ -806,13 +814,32 @@ export default function Dashboard() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-sent-dim mb-1">回撤阈值 (%)</label>
+                <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newAlertEnabled}
+                    onChange={(e) => setNewAlertEnabled(e.target.checked)}
+                    className="accent-sent-blue"
+                  />
+                  启用 52 周回撤风险提醒
+                </label>
+                <p className="text-xs text-sent-dim mt-1">
+                  首次越过关注线时提醒一次，明显恢复后才会重新布防。
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs text-sent-dim mb-1">关注线 (%)</label>
                 <input
                   type="number"
                   value={newThreshold}
                   onChange={(e) => setNewThreshold(e.target.value)}
-                  className="w-full bg-sent-bg border border-sent-border rounded-lg px-3 py-2 text-sm text-white placeholder-sent-dim focus:outline-none focus:border-sent-blue"
+                  disabled={!newAlertEnabled}
+                  min="1"
+                  max="94"
+                  step="0.5"
+                  className="w-full bg-sent-bg border border-sent-border rounded-lg px-3 py-2 text-sm text-white placeholder-sent-dim focus:outline-none focus:border-sent-blue disabled:opacity-50"
                 />
+                <p className="text-xs text-sent-dim mt-1">例如 15 表示从 52 周高点回撤达到 15% 时关注。</p>
               </div>
               {addError && (
                 <div className="text-xs text-sent-red bg-sent-red/10 px-3 py-2 rounded-lg">{addError}</div>
@@ -847,7 +874,10 @@ export default function Dashboard() {
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowAlerts(false)} />
           <div className="relative bg-sent-card border border-sent-border rounded-xl p-6 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">🔔 告警通知</h3>
+              <div>
+                <h3 className="text-lg font-semibold">🔔 风险关注提醒</h3>
+                <p className="text-xs text-sent-dim mt-1">这是关注信号，不构成买卖建议。</p>
+              </div>
               <button
                 onClick={() => setShowAlerts(false)}
                 className="text-sent-dim hover:text-white text-xl"
@@ -896,10 +926,10 @@ export default function Dashboard() {
                           </span>
                         </div>
                         <div className="text-sm text-sent-dim space-y-1">
-                          <div>{alert.name || alert.ticker}</div>
+                          <div>{alert.event_type === 'breach' ? '首次越过 52 周回撤关注线' : '风险提醒'} · {alert.name || alert.ticker}</div>
                           <div className="flex gap-4">
                             <span>回撤：<span className="text-sent-red font-mono">{alert.drawdown_pct != null ? `${Number(alert.drawdown_pct).toFixed(2)}%` : '--'}</span></span>
-                            <span>阈值：<span className="text-sent-yellow font-mono">{alert.threshold != null ? `${Math.abs(alert.threshold).toFixed(2)}%` : '--'}</span></span>
+                            <span>关注线：<span className="text-sent-yellow font-mono">{alert.threshold != null ? `${Number(alert.threshold).toFixed(2)}%` : '--'}</span></span>
                           </div>
                           <div>现价：{currency}{alert.current_price != null ? Number(alert.current_price).toFixed(2) : '--'}</div>
                         </div>
@@ -922,6 +952,12 @@ export default function Dashboard() {
                       <div className="text-sm text-sent-dim">
                         触发时间：{h.sent_at ? new Date(h.sent_at).toLocaleString('zh-CN') : '--'}
                       </div>
+                      {h.drawdown_pct != null && (
+                        <div className="text-sm text-sent-dim mt-1">
+                          首次越线 · 回撤 <span className="font-mono text-sent-red">{Number(h.drawdown_pct).toFixed(2)}%</span>
+                          {' / '}关注线 <span className="font-mono text-sent-yellow">{Number(h.threshold).toFixed(2)}%</span>
+                        </div>
+                      )}
                     </div>
                   ))
                 )
@@ -970,7 +1006,7 @@ export default function Dashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60" onClick={() => setEditingStock(null)} />
           <div className="relative bg-sent-card border border-sent-border rounded-xl p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-semibold mb-4">编辑阈值 - {editingStock.ticker}</h3>
+            <h3 className="text-lg font-semibold mb-4">编辑风险提醒 - {editingStock.ticker}</h3>
             <form onSubmit={handleEditStock} className="space-y-4">
               <div className="flex items-center gap-3 text-sm text-sent-dim mb-2">
                 <span>{editingStock.name || editingStock.ticker}</span>
@@ -978,17 +1014,31 @@ export default function Dashboard() {
                 <span>当前回撤: <span className={getDrawdownClass(editingStock.drawdown)}>{editingStock.drawdown != null ? Number(editingStock.drawdown).toFixed(2) + '%' : '--'}</span></span>
               </div>
               <div>
-                <label className="block text-xs text-sent-dim mb-1">回撤阈值 (%)</label>
+                <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editAlertEnabled}
+                    onChange={(e) => setEditAlertEnabled(e.target.checked)}
+                    className="accent-sent-blue"
+                  />
+                  启用 52 周回撤风险提醒
+                </label>
+                <p className="text-xs text-sent-dim mt-1">关闭后不会生成提醒，重新开启会从当前状态重新判断。</p>
+              </div>
+              <div>
+                <label className="block text-xs text-sent-dim mb-1">关注线 (%)</label>
                 <input
                   type="number"
                   value={editThreshold}
                   onChange={(e) => setEditThreshold(e.target.value)}
-                  className="w-full bg-sent-bg border border-sent-border rounded-lg px-3 py-2 text-sm text-white placeholder-sent-dim focus:outline-none focus:border-sent-blue"
+                  disabled={!editAlertEnabled}
+                  className="w-full bg-sent-bg border border-sent-border rounded-lg px-3 py-2 text-sm text-white placeholder-sent-dim focus:outline-none focus:border-sent-blue disabled:opacity-50"
                   step="0.5"
-                  min="0"
+                  min="1"
+                  max="94"
                   autoFocus
                 />
-                <p className="text-xs text-sent-dim mt-1">当前回撤超过此值时触发告警</p>
+                <p className="text-xs text-sent-dim mt-1">回撤达到此线时仅提醒一次，收窄至少 2 个百分点后才重新布防。</p>
               </div>
               {editError && (
                 <div className="text-xs text-sent-red bg-sent-red/10 px-3 py-2 rounded-lg">{editError}</div>
