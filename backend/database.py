@@ -35,7 +35,8 @@ def init_db():
             ticker TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL,
             market TEXT NOT NULL DEFAULT 'US',
-            threshold REAL NOT NULL DEFAULT 0.0,
+            threshold REAL NOT NULL DEFAULT 15.0,
+            alert_enabled INTEGER NOT NULL DEFAULT 0,
             current_price REAL,
             change_pct REAL,
             sector TEXT,
@@ -70,6 +71,15 @@ def init_db():
         cursor.execute("ALTER TABLE stocks ADD COLUMN sector TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        cursor.execute("ALTER TABLE stocks ADD COLUMN alert_enabled INTEGER")
+        # 旧版本以负数代表启用、0 代表关闭；只在新增列的这一次转换。
+        cursor.execute(
+            "UPDATE stocks SET alert_enabled = CASE WHEN threshold < 0 THEN 1 ELSE 0 END"
+        )
+        cursor.execute("UPDATE stocks SET threshold = ABS(threshold)")
+    except sqlite3.OperationalError:
+        pass
 
     # 告警表
     cursor.execute("""
@@ -87,7 +97,31 @@ def init_db():
             ticker TEXT NOT NULL,
             name TEXT, market TEXT, drawdown_pct REAL, threshold REAL,
             current_price REAL, week52_high REAL, week52_high_date TEXT,
+            event_type TEXT NOT NULL DEFAULT 'breach',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    try:
+        cursor.execute("ALTER TABLE alert_unread ADD COLUMN event_type TEXT NOT NULL DEFAULT 'breach'")
+    except sqlite3.OperationalError:
+        pass
+    for column in (
+        "event_type TEXT NOT NULL DEFAULT 'breach'",
+        "drawdown_pct REAL",
+        "threshold REAL",
+    ):
+        try:
+            cursor.execute(f"ALTER TABLE alert_history ADD COLUMN {column}")
+        except sqlite3.OperationalError:
+            pass
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alert_state (
+            ticker TEXT PRIMARY KEY,
+            is_breached INTEGER NOT NULL DEFAULT 0,
+            last_drawdown REAL,
+            breached_at TIMESTAMP,
+            recovered_at TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 

@@ -29,14 +29,16 @@ def _init_db():
 
 
 def _insert_stock(ticker="AAPL", name="Apple Inc", market="US", drawdown=-25.0,
-                  current_price=200.0, week52_high=266.0, change_pct=-2.5, threshold=-15.0):
+                  current_price=200.0, week52_high=266.0, change_pct=-2.5, threshold=15.0,
+                  alert_enabled=True):
     db = database.get_db()
     try:
         db.execute(
-            """INSERT INTO stocks (ticker, name, market, threshold, current_price, change_pct,
-                                   week52_high, drawdown)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (ticker, name, market, threshold, current_price, change_pct, week52_high, drawdown),
+            """INSERT INTO stocks (ticker, name, market, threshold, alert_enabled, current_price,
+                                   change_pct, week52_high, drawdown)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (ticker, name, market, threshold, int(alert_enabled), current_price, change_pct,
+             week52_high, drawdown),
         )
         db.commit()
     finally:
@@ -50,7 +52,7 @@ def test_collect_snapshot_idempotent():
     _init_db()
     _insert_stock()
     _insert_stock(ticker="0700", name="Tencent", market="HK", drawdown=-30.0,
-                  current_price=400.0, week52_high=500.0, change_pct=1.2, threshold=-20.0)
+                  current_price=400.0, week52_high=500.0, change_pct=1.2, threshold=20.0)
 
     n1 = g.collect_snapshot("2026-01-01")
     n2 = g.collect_snapshot("2026-01-01")
@@ -141,7 +143,7 @@ def test_trends_in_stats():
     _init_db()
     _insert_stock()  # AAPL drawdown -25
     _insert_stock(ticker="0700", name="Tencent", market="HK", drawdown=-30.0,
-                  current_price=400.0, week52_high=500.0, change_pct=1.2, threshold=-20.0)
+                  current_price=400.0, week52_high=500.0, change_pct=1.2, threshold=20.0)
 
     # 只给 AAPL 插 3 个历史点；0700 无历史点 → 应被过滤
     db = database.get_db()

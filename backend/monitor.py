@@ -77,7 +77,8 @@ class StockMonitor:
             ticker=row["ticker"],
             name=row["name"] or "",
             market=row["market"] or "US",
-            threshold=row["threshold"] or 0.0,
+            threshold=row["threshold"] or 15.0,
+            alert_enabled=bool(row["alert_enabled"]) if "alert_enabled" in row.keys() else False,
             current_price=row["current_price"],
             change_pct=row["change_pct"],
             ah_change_pct=row["ah_change_pct"],
@@ -113,9 +114,11 @@ class StockMonitor:
         finally:
             db.close()
 
-    def add_stock(self, ticker: str, threshold: float = 0.0) -> Optional[StockResponse]:
+    def add_stock(self, ticker: str, threshold: float = 15.0,
+                  alert_enabled: bool = False) -> Optional[StockResponse]:
         """添加股票到监控列表"""
         ticker = ticker.strip().upper()
+        threshold = self._normalize_alert_threshold(threshold)
         db = get_db()
         try:
             existing = db.execute("SELECT id FROM stocks WHERE ticker = ?", (ticker,)).fetchone()
@@ -160,11 +163,11 @@ class StockMonitor:
 
             cursor = db.execute(
                 """INSERT INTO stocks
-                   (ticker, name, market, threshold, current_price, change_pct, ah_change_pct, ah_change_label, sector,
+                   (ticker, name, market, threshold, alert_enabled, current_price, change_pct, ah_change_pct, ah_change_label, sector,
                     week52_high, week52_low, week52_high_date, week52_low_date,
                     drawdown, distance_low_pct, pe_ratio, market_status, last_updated)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (ticker, name, market, threshold, current_price, change_pct, ah_change_pct, ah_change_label, sector,
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (ticker, name, market, threshold, int(alert_enabled), current_price, change_pct, ah_change_pct, ah_change_label, sector,
                  week52_high, week52_low, week52_high_date, week52_low_date,
                  drawdown, distance_low_pct, pe_ratio, market_status, last_updated),
             )
@@ -176,6 +179,7 @@ class StockMonitor:
                 name=name,
                 market=market,
                 threshold=threshold,
+                alert_enabled=alert_enabled,
                 current_price=current_price,
                 change_pct=change_pct,
                 ah_change_pct=ah_change_pct,
@@ -204,17 +208,21 @@ class StockMonitor:
                 return None
 
             updates = {}
-            allowed_fields = ["name", "threshold", "current_price", "change_pct", "ah_change_pct", "ah_change_label", "sector",
+            allowed_fields = ["name", "threshold", "alert_enabled", "current_price", "change_pct", "ah_change_pct", "ah_change_label", "sector",
                               "week52_high", "week52_low", "week52_high_date", "week52_low_date",
                               "drawdown", "distance_low_pct", "pe_ratio", "market_status"]
             for key, value in kwargs.items():
                 if key in allowed_fields and value is not None:
+                    if key == "threshold":
+                        value = self._normalize_alert_threshold(value)
                     updates[key] = value
 
             if updates:
                 set_clause = ", ".join(f"{k} = ?" for k in updates)
                 values = list(updates.values()) + [ticker]
                 db.execute(f"UPDATE stocks SET {set_clause} WHERE ticker = ?", values)
+                if "threshold" in updates or "alert_enabled" in updates:
+                    db.execute("DELETE FROM alert_state WHERE ticker = ?", (ticker,))
                 db.commit()
 
             row = db.execute("SELECT * FROM stocks WHERE ticker = ?", (ticker,)).fetchone()
@@ -222,12 +230,21 @@ class StockMonitor:
         finally:
             db.close()
 
+    @staticmethod
+    def _normalize_alert_threshold(threshold: float) -> float:
+        """将 API 的正负输入统一为正数百分比，拒绝无意义的风险线。"""
+        value = abs(float(threshold))
+        if not 0 < value < 95:
+            raise ValueError("回撤阈值必须在 0 到 95 之间")
+        return round(value, 2)
+
     def delete_stock(self, ticker: str) -> bool:
         """删除股票"""
         ticker = ticker.strip().upper()
         db = get_db()
         try:
             cursor = db.execute("DELETE FROM stocks WHERE ticker = ?", (ticker,))
+            db.execute("DELETE FROM alert_state WHERE ticker = ?", (ticker,))
             db.commit()
             return cursor.rowcount > 0
         finally:

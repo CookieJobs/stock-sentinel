@@ -176,11 +176,13 @@ class BriefingGenerator:
         for s in stocks:
             market_count[s.get("market") or "US"] = market_count.get(s.get("market") or "US", 0) + 1
 
-        # 超阈值清单（threshold < 0 且 |drawdown| >= |threshold|）
+        # 超阈值清单：仅纳入用户明确开启的正数回撤阈值。
         over_threshold = [
             s for s in stocks
             if s.get("drawdown") is not None and s.get("threshold") is not None
-            and s["threshold"] < 0 and abs(s["drawdown"]) >= abs(s["threshold"])
+            and bool(s.get("alert_enabled"))
+            and s["threshold"] > 0
+            and s["drawdown"] <= -s["threshold"]
         ]
 
         # 回撤最深 Top 5
@@ -335,7 +337,7 @@ class BriefingGenerator:
 
         # 风险与免责
         lines.append("## ⚠️ 风险提醒")
-        lines.append(f"- 超过阈值的股票请关注是否触发告警；回撤扩大趋势需留意基本面前景。")
+        lines.append(f"- 越过回撤关注线的股票请结合基本面和策略假设复核；本提醒不构成买卖建议。")
         lines.append(f"- {DISCLAIMER}")
         return "\n".join(lines)
 

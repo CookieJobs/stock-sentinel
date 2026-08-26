@@ -82,7 +82,10 @@ def get_stock(ticker: str):
 @app.post("/api/stocks/", response_model=StockResponse, status_code=201)
 def add_stock(req: AddStockRequest):
     """添加股票到监控列表"""
-    stock = monitor.add_stock(req.ticker, req.threshold)
+    try:
+        stock = monitor.add_stock(req.ticker, req.threshold, req.alert_enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if not stock:
         raise HTTPException(status_code=409, detail="股票已存在或获取数据失败")
     return stock
@@ -91,7 +94,10 @@ def add_stock(req: AddStockRequest):
 @app.put("/api/stocks/{ticker}", response_model=StockResponse)
 def update_stock(ticker: str, req: UpdateStockRequest):
     """更新股票设置"""
-    stock = monitor.update_stock(ticker, **req.model_dump(exclude_none=True))
+    try:
+        stock = monitor.update_stock(ticker, **req.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if not stock:
         raise HTTPException(status_code=404, detail="股票未找到")
     return stock

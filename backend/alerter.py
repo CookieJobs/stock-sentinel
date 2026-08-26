@@ -32,7 +32,7 @@ class AlertDeduplicator:
         finally:
             conn.close()
 
-    def mark_alerted(self, ticker: str):
+    def mark_alerted(self, stock: StockResponse):
         """标记已告警"""
         from database import get_db
         conn = get_db()
@@ -40,8 +40,10 @@ class AlertDeduplicator:
             from datetime import date
             today = date.today().isoformat()
             conn.execute(
-                "INSERT OR IGNORE INTO alert_history (ticker, sent_date) VALUES (?, ?)",
-                (ticker, today),
+                """INSERT OR IGNORE INTO alert_history
+                   (ticker, sent_date, event_type, drawdown_pct, threshold)
+                   VALUES (?, ?, 'breach', ?, ?)""",
+                (stock.ticker, today, stock.drawdown, stock.threshold),
             )
             conn.commit()
         finally:
@@ -51,14 +53,14 @@ class AlertDeduplicator:
 class AlertUnreadStore:
     """未读告警存储"""
 
-    def add(self, stock: StockResponse):
+    def add(self, stock: StockResponse, event_type: str = "breach"):
         from database import get_db
         conn = get_db()
         try:
             conn.execute(
                 """INSERT INTO alert_unread
-                   (ticker, name, market, drawdown_pct, threshold, current_price, week52_high, week52_high_date)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (ticker, name, market, drawdown_pct, threshold, current_price, week52_high, week52_high_date, event_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     stock.ticker,
                     stock.name,
@@ -68,6 +70,7 @@ class AlertUnreadStore:
                     stock.current_price,
                     stock.week52_high,
                     stock.week52_high_date,
+                    event_type,
                 ),
             )
             conn.commit()
@@ -135,6 +138,112 @@ class AlertUnreadStore:
             conn.close()
 
 
+class AlertStateStore:
+    """告警状态机：只在首次越线时触发，明显恢复后才重新布防。"""
+
+    def __init__(self, recovery_buffer_pct: Optional[float] = None):
+        configured = recovery_buffer_pct
+        if configured is None:
+            configured = float(os.environ.get("ALERT_RECOVERY_BUFFER_PCT", "2"))
+        self.recovery_buffer_pct = max(0.1, float(configured))
+        self.max_quote_age_minutes = max(
+            1, int(os.environ.get("ALERT_MAX_QUOTE_AGE_MINUTES", "120"))
+        )
+
+    def transition(self, stock: StockResponse) -> Optional[str]:
+        """应用当前回撤并返回 breach/recovered；没有状态变化时返回 None。"""
+        if not stock.alert_enabled:
+            return None
+        if stock.drawdown is None or stock.threshold is None or stock.threshold <= 0:
+            return None
+        if not self._has_usable_market_data(stock):
+            return None
+
+        db = self._get_row(stock.ticker)
+        was_breached = bool(db["is_breached"]) if db else False
+        is_breached = stock.drawdown <= -stock.threshold
+
+        if is_breached:
+            self._save(stock.ticker, True, stock.drawdown)
+            return None if was_breached else "breach"
+
+        # 对已越线标的采用回撤滞后，避免价格在阈值附近来回时反复提醒。
+        recovery_buffer = min(self.recovery_buffer_pct, stock.threshold / 2)
+        recovery_line = -(stock.threshold - recovery_buffer)
+        if was_breached and stock.drawdown > recovery_line:
+            self._save(stock.ticker, False, stock.drawdown)
+            return "recovered"
+
+        if db:
+            self._save(stock.ticker, was_breached, stock.drawdown)
+        return None
+
+    def _has_usable_market_data(self, stock: StockResponse) -> bool:
+        """阻止明显异常或过期行情成为用户的风险提醒依据。"""
+        if stock.drawdown > 0 or stock.drawdown <= -95:
+            logger.warning("Suppressing anomalous drawdown alert for %s: %s", stock.ticker, stock.drawdown)
+            return False
+        if not stock.last_updated:
+            return True
+        try:
+            updated = datetime.fromisoformat(stock.last_updated.replace("Z", "+00:00"))
+            now = datetime.now(updated.tzinfo) if updated.tzinfo else datetime.now()
+            age_minutes = (now - updated).total_seconds() / 60
+        except (TypeError, ValueError):
+            logger.warning("Suppressing alert with invalid update time for %s", stock.ticker)
+            return False
+        if age_minutes > self.max_quote_age_minutes:
+            logger.info("Suppressing stale alert for %s (%.0f minutes old)", stock.ticker, age_minutes)
+            return False
+        return True
+
+    def clear(self, ticker: str):
+        from database import get_db
+        conn = get_db()
+        try:
+            conn.execute("DELETE FROM alert_state WHERE ticker = ?", (ticker.upper(),))
+            conn.commit()
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _get_row(ticker: str):
+        from database import get_db
+        conn = get_db()
+        try:
+            return conn.execute(
+                "SELECT * FROM alert_state WHERE ticker = ?", (ticker.upper(),)
+            ).fetchone()
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _save(ticker: str, is_breached: bool, drawdown: float):
+        from database import get_db
+        conn = get_db()
+        try:
+            conn.execute(
+                """INSERT INTO alert_state
+                   (ticker, is_breached, last_drawdown, breached_at, recovered_at, updated_at)
+                   VALUES (?, ?, ?,
+                           CASE WHEN ? THEN CURRENT_TIMESTAMP END,
+                           CASE WHEN ? THEN CURRENT_TIMESTAMP END,
+                           CURRENT_TIMESTAMP)
+                   ON CONFLICT(ticker) DO UPDATE SET
+                     is_breached = excluded.is_breached,
+                     last_drawdown = excluded.last_drawdown,
+                     breached_at = CASE WHEN excluded.is_breached = 1
+                                        THEN CURRENT_TIMESTAMP ELSE alert_state.breached_at END,
+                     recovered_at = CASE WHEN excluded.is_breached = 0
+                                         THEN CURRENT_TIMESTAMP ELSE alert_state.recovered_at END,
+                     updated_at = CURRENT_TIMESTAMP""",
+                (ticker.upper(), int(is_breached), drawdown, int(is_breached), int(not is_breached)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
 def format_alert_message(stock: StockResponse) -> str:
     currency = {"CN": "¥", "HK": "HK$", "US": "$"}.get(stock.market, "$")
     return (
@@ -150,11 +259,13 @@ def format_alert_message(stock: StockResponse) -> str:
 
 def check_stock_alert(stock: StockResponse, dedup: AlertDeduplicator) -> bool:
     """检查单只股票是否应触发告警"""
+    if not stock.alert_enabled:
+        return False
     if stock.drawdown is None or stock.threshold is None:
         return False
-    if stock.threshold >= 0:
+    if stock.threshold <= 0:
         return False
-    if abs(stock.drawdown) < abs(stock.threshold):
+    if stock.drawdown > -stock.threshold:
         return False
     return dedup.should_alert(stock.ticker)
 
@@ -165,6 +276,7 @@ class StockAlerter:
     def __init__(self):
         self.dedup = AlertDeduplicator()
         self.unread = AlertUnreadStore()
+        self.state = AlertStateStore()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._interval = int(os.environ.get("ALERT_CHECK_INTERVAL", 300))
@@ -200,12 +312,17 @@ class StockAlerter:
         stocks = monitor.get_all_stocks()
         alerted = []
         for stock in stocks:
-            if check_stock_alert(stock, self.dedup):
-                self.unread.add(stock)
-                self.dedup.mark_alerted(stock.ticker)
-                alerted.append(stock.ticker)
-                logger.info("Alert triggered: %s (%s)", stock.ticker, stock.name)
-                self._send_webhook(stock)
+            transition = self.state.transition(stock)
+            if transition == "recovered":
+                logger.info("Alert rearmed after recovery: %s", stock.ticker)
+                continue
+            if transition != "breach" or not self.dedup.should_alert(stock.ticker):
+                continue
+            self.unread.add(stock)
+            self.dedup.mark_alerted(stock)
+            alerted.append(stock.ticker)
+            logger.info("Alert triggered: %s (%s)", stock.ticker, stock.name)
+            self._send_webhook(stock)
         if alerted:
             logger.info("Alerted tickers: %s", alerted)
 

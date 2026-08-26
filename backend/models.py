@@ -8,7 +8,8 @@ class StockResponse(BaseModel):
     ticker: str
     name: Optional[str] = ""
     market: Optional[str] = "US"
-    threshold: Optional[float] = 0.0
+    threshold: Optional[float] = 15.0
+    alert_enabled: bool = False
     current_price: Optional[float] = None
     change_pct: Optional[float] = None
     ah_change_pct: Optional[float] = None        # 盘后涨跌幅（美股专属）
@@ -28,12 +29,14 @@ class StockResponse(BaseModel):
 
 class AddStockRequest(BaseModel):
     ticker: str
-    threshold: Optional[float] = 0.0
+    threshold: Optional[float] = 15.0
+    alert_enabled: bool = False
 
 
 class UpdateStockRequest(BaseModel):
     name: Optional[str] = None
     threshold: Optional[float] = None
+    alert_enabled: Optional[bool] = None
     current_price: Optional[float] = None
     change_pct: Optional[float] = None
     sector: Optional[str] = None
