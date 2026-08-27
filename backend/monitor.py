@@ -1,5 +1,6 @@
 """股票监控核心逻辑 — CRUD + 数据刷新"""
 import os
+import re
 import uuid
 import threading
 import sqlite3
@@ -114,11 +115,33 @@ class StockMonitor:
         finally:
             db.close()
 
+    @staticmethod
+    def _normalize_ticker(ticker: str) -> str:
+        """将监控页常见的交易所后缀写法转换为数据源使用的代码。"""
+        normalized = ticker.strip().upper()
+        if not normalized:
+            raise ValueError("股票代码不能为空")
+
+        if "." not in normalized:
+            return normalized
+
+        symbol, exchange = normalized.rsplit(".", 1)
+        if exchange in {"SS", "SH", "SZ"}:
+            if not re.fullmatch(r"\d{6}", symbol):
+                raise ValueError("A股代码必须是 6 位数字")
+            return symbol
+        if exchange == "HK":
+            if not re.fullmatch(r"\d{1,5}", symbol):
+                raise ValueError("港股代码必须是 1 到 5 位数字")
+            return symbol.zfill(5)
+        return normalized
+
     def add_stock(self, ticker: str, threshold: float = 15.0,
-                  alert_enabled: bool = False) -> Optional[StockResponse]:
+                  alert_enabled: bool = False, name: Optional[str] = None) -> Optional[StockResponse]:
         """添加股票到监控列表"""
-        ticker = ticker.strip().upper()
+        ticker = self._normalize_ticker(ticker)
         threshold = self._normalize_alert_threshold(threshold)
+        manual_name = name.strip() if name else ""
         db = get_db()
         try:
             existing = db.execute("SELECT id FROM stocks WHERE ticker = ?", (ticker,)).fetchone()
@@ -126,7 +149,7 @@ class StockMonitor:
                 return None
 
             data = DataFetcher.get_stock_info(ticker, self.api_key)
-            name = ticker
+            stock_name = manual_name or ticker
             market = DataFetcher.detect_market(ticker)
             current_price = None
             change_pct = None
@@ -144,7 +167,7 @@ class StockMonitor:
             last_updated = None
 
             if data:
-                name = data.get("name", ticker)
+                stock_name = manual_name or data.get("name", ticker)
                 market = data.get("market", "US")
                 current_price = data.get("current_price")
                 change_pct = data.get("change_pct")
@@ -167,7 +190,7 @@ class StockMonitor:
                     week52_high, week52_low, week52_high_date, week52_low_date,
                     drawdown, distance_low_pct, pe_ratio, market_status, last_updated)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (ticker, name, market, threshold, int(alert_enabled), current_price, change_pct, ah_change_pct, ah_change_label, sector,
+                (ticker, stock_name, market, threshold, int(alert_enabled), current_price, change_pct, ah_change_pct, ah_change_label, sector,
                  week52_high, week52_low, week52_high_date, week52_low_date,
                  drawdown, distance_low_pct, pe_ratio, market_status, last_updated),
             )
@@ -176,7 +199,7 @@ class StockMonitor:
             return StockResponse(
                 id=cursor.lastrowid,
                 ticker=ticker,
-                name=name,
+                name=stock_name,
                 market=market,
                 threshold=threshold,
                 alert_enabled=alert_enabled,

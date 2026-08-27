@@ -83,7 +83,12 @@ def get_stock(ticker: str):
 def add_stock(req: AddStockRequest):
     """添加股票到监控列表"""
     try:
-        stock = monitor.add_stock(req.ticker, req.threshold, req.alert_enabled)
+        stock = monitor.add_stock(
+            req.ticker,
+            req.threshold,
+            req.alert_enabled,
+            name=req.name,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     if not stock:

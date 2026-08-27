@@ -297,3 +297,10 @@ AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加�
 - 提交：`fix`(test_data_fetcher) / `chore`(tracker 清理) / `feat`(历史行情后端+API) / `feat`(前端 sparkline) 共 4 笔，小步分离。
 - 未决（需人看）：`backend/data_fetcher.py`、`backend/monitor.py` 的未提交改动仍保持原样未纳入提交（其中东财 URL https→http 降级属安全隐患，建议人工确认）；
   历史行情需真实 API 运行一段时间才有趋势数据，sparkline 初期多为"暂无趋势"占位。
+## 2026-08-28 — 修复股票监控新增股票
+
+- 新增接口现在识别监控页提示的代码格式：A 股 `600519.SS/.SH/.SZ` 自动存为 `600519`，港股 `700.HK`/`0700.HK` 自动补齐并存为 `00700`；由此避免 A 股误按美股请求行情。
+- `POST /api/stocks/` 支持可选 `name`，用户手填名称将作为监控项显示名；同一股票的后缀写法与规范代码会正确判重。空代码或格式不合法的 A 股/港股后缀返回 422，避免写入无效项。
+- 新增 `backend/test_stock_management.py`（6 个临时 SQLite API 回归测试），不访问外部行情、不读写真实 `data/sentinel.db`。
+- 验证：`python backend/test_data_fetcher.py`、`python -m pytest backend/test_*.py -q`（25 passed）、`python -m pytest backend/tests/ -q`（232 passed，1 条既有运行时 warning）、前端 lint + build 通过。
+- 与「优化首页股票监控模块」会话隔离：未修改 `frontend/src/pages/Dashboard.jsx` 或首页样式。

@@ -29,6 +29,7 @@ class StockResponse(BaseModel):
 
 class AddStockRequest(BaseModel):
     ticker: str
+    name: Optional[str] = None
     threshold: Optional[float] = 15.0
     alert_enabled: bool = False
 
