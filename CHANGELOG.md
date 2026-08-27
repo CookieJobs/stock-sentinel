@@ -1,3 +1,8 @@
+## 2026-08-27 — 浏览器标签图标改为 📈
+
+- 将 SVG favicon 简化为原生 📈 emoji，替换此前的自绘折线图标；Vite 构建产物已同步到 `backend/static/`。
+- 验证：`python backend/test_data_fetcher.py`、`python -m pytest backend/tests/ -q`（232 passed）、前端 lint + build 通过。
+
 ## 2026-08-26 — 风险关注提醒：一次越线、恢复后重置
 
 - **语义统一**：回撤提醒改为显式开关 + 正数「关注线」，新增股票默认关闭；旧库的负数阈值平滑迁移为开启并取绝对值，零阈值仍关闭，历史记录不删除。
