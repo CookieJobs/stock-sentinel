@@ -56,6 +56,28 @@ def init_db():
         )
     """)
 
+    # 自选分组：分组本身与股票归属分开保存，一只股票可出现在多个分组。
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_group_members (
+            group_id INTEGER NOT NULL,
+            stock_id INTEGER NOT NULL,
+            PRIMARY KEY (group_id, stock_id),
+            FOREIGN KEY (group_id) REFERENCES stock_groups(id) ON DELETE CASCADE,
+            FOREIGN KEY (stock_id) REFERENCES stocks(id) ON DELETE CASCADE
+        )
+    """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stock_group_members_stock_id "
+        "ON stock_group_members(stock_id)"
+    )
+
     # 默认设置
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'dark')")
 

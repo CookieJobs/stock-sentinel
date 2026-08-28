@@ -1,6 +1,6 @@
 """Pydantic 数据模型"""
 from typing import Any, Dict, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StockResponse(BaseModel):
@@ -50,3 +50,19 @@ class UpdateStockRequest(BaseModel):
     distance_low_pct: Optional[float] = None
     pe_ratio: Optional[float] = None
     market_status: Optional[str] = None
+
+
+class StockGroupNameRequest(BaseModel):
+    name: str
+
+
+class StockGroupResponse(BaseModel):
+    id: int
+    name: str
+    stock_ids: list[int] = Field(default_factory=list)
+    stock_count: int = 0
+    created_at: Optional[str] = None
+
+
+class StockIdBatchRequest(BaseModel):
+    stock_ids: list[int] = Field(min_length=1)
