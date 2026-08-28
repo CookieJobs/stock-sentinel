@@ -238,9 +238,12 @@ def generate_briefing():
 # ── Price History API ────────────────────────────────────────
 
 @app.get("/api/history/{ticker}")
-def get_price_history(ticker: str, days: int = 30):
+def get_price_history(ticker: str, days: int = 30, window: str = "1y"):
     """查询单只股票的历史行情序列（回撤趋势图数据源）"""
-    return monitor.get_price_history(ticker, days)
+    try:
+        return monitor.get_price_history(ticker, days, window)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 # ── 静态文件托管（必须放在所有 /api 路由之后，避免遮蔽 API）──

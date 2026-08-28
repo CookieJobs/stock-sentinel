@@ -172,8 +172,9 @@ try:
     assert r["name"] == "Apple Inc."
     assert r["current_price"] == 311.67
     assert abs(r["change_pct"] - 36.84) < 0.01   # (311.67-227.76)/227.76*100
-    assert r["week52_high"] == 344.57
-    assert r["week52_high_date"] == "2025-08-25"
+    # 模拟日线距当前已超过一年；新口径不能再把它伪装成有效的 52 周数据。
+    assert r["drawdown_windows"]["1y"]["status"] == "insufficient_history"
+    assert r["week52_high"] is None
     print('Yahoo quote parse: PASS')
 finally:
     df._SESSION.get = _orig_yh_get

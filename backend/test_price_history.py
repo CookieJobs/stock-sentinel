@@ -4,6 +4,7 @@
 """
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 from pathlib import Path
@@ -33,6 +34,11 @@ def _fake_data(ticker="AAPL", source="eastmoney", price=200.0, drawdown=-25.0, c
         "change_pct": change,
         "drawdown": drawdown,
         "week52_high": 266.0,
+        "drawdown_windows": {
+            "3m": {"status": "ok", "drawdown": -8.0, "high": 217.4, "high_date": "2026-08-01"},
+            "6m": {"status": "ok", "drawdown": -16.0, "high": 238.1, "high_date": "2026-05-01"},
+            "1y": {"status": "ok", "drawdown": drawdown, "high": 266.0, "high_date": "2025-10-01"},
+        },
     }
 
 
@@ -74,6 +80,33 @@ def test_record_point_fields():
     assert row["current_price"] == 200.0
     assert row["drawdown"] == -25.0
     assert row["market"] == "CN"
+
+
+def test_init_db_migrates_multi_period_snapshots_without_recreating_existing_tables():
+    """升级已有个人库时只能补列，不能丢掉股票或历史采样。"""
+    if database.DB_PATH.exists():
+        database.DB_PATH.unlink()
+    db = sqlite3.connect(database.DB_PATH)
+    try:
+        db.execute("CREATE TABLE stocks (id INTEGER PRIMARY KEY, ticker TEXT, name TEXT)")
+        db.execute("CREATE TABLE price_history (id INTEGER PRIMARY KEY, ticker TEXT, bucket TEXT, captured_at TEXT)")
+        db.execute("INSERT INTO stocks (ticker, name) VALUES ('AAPL', 'Apple')")
+        db.commit()
+    finally:
+        db.close()
+
+    database.init_db()
+    db = database.get_db()
+    try:
+        stock_columns = {row["name"] for row in db.execute("PRAGMA table_info(stocks)").fetchall()}
+        history_columns = {row["name"] for row in db.execute("PRAGMA table_info(price_history)").fetchall()}
+        stock = db.execute("SELECT ticker, name FROM stocks WHERE ticker = 'AAPL'").fetchone()
+    finally:
+        db.close()
+
+    assert "drawdown_windows" in stock_columns
+    assert "drawdown_windows" in history_columns
+    assert tuple(stock) == ("AAPL", "Apple")
 
 
 def test_record_idempotent_same_bucket():
@@ -152,14 +185,39 @@ def test_api_flow():
     assert r3.json()["days"] == 90   # 上限截断
 
 
+def test_api_history_uses_requested_drawdown_window_and_rejects_unknown_window():
+    """趋势图必须与页面所选周期一致，未知周期不能悄悄回退到 1 年。"""
+    from fastapi.testclient import TestClient
+    from main import app
+    from monitor import StockMonitor
+
+    _init_db()
+    StockMonitor()._record_price_point(_fake_data())
+    client = TestClient(app)
+
+    response = client.get("/api/history/AAPL?window=3m")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["window"] == "3m"
+    assert payload["points"][0]["drawdown"] == -8.0
+    assert payload["points"][0]["window_status"] == "ok"
+    assert payload["points"][0]["window_high"] == 217.4
+
+    invalid = client.get("/api/history/AAPL?window=2y")
+    assert invalid.status_code == 422
+
+
 if __name__ == "__main__":
     tests = [
         test_bucket_alignment,
         test_record_point_fields,
+        test_init_db_migrates_multi_period_snapshots_without_recreating_existing_tables,
         test_record_idempotent_same_bucket,
         test_none_not_recorded,
         test_retention_cleanup,
         test_api_flow,
+        test_api_history_uses_requested_drawdown_window_and_rejects_unknown_window,
     ]
     passed = 0
     for fn in tests:

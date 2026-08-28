@@ -1,9 +1,16 @@
-// v0.2.0 历史代码：空依赖 useCallback + setState，React Compiler 严格模式不匹配
-// M6 打磨时统一重构；现在保持行为不变
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import AddStockModal from '../components/AddStockModal'
 import BriefingModal from '../components/BriefingModal'
 import Sparkline from '../components/Sparkline'
+import {
+  DRAWDOWN_WINDOWS,
+  DRAWDOWN_WINDOW_LABELS,
+  getMetricStateLabel,
+  getMonitoringMetric,
+  getMonitoringSortValue,
+  getOneYearAlertState,
+  getPriceHistoryUrl,
+} from '../lib/monitoring'
 
 const API_BASE = '/api'
 
@@ -32,10 +39,20 @@ function getChangeClass(val) {
 }
 
 function getDrawdownClass(val) {
-  if (val == null) return 'text-sent-dim'
-  if (val <= -20) return 'text-sent-red font-bold'
-  if (val <= -10) return 'text-sent-yellow font-bold'
-  return 'text-sent-green'
+  return val == null ? 'text-sent-dim' : 'text-white'
+}
+
+function getAlertStateClass(state) {
+  if (state === 'breached') return 'text-sent-red font-medium'
+  if (state === 'monitoring') return 'text-sent-blue'
+  return 'text-sent-dim'
+}
+
+function getLatestMarketTimestamp(stocks) {
+  const timestamps = stocks
+    .map((stock) => Date.parse(stock.last_updated))
+    .filter((timestamp) => Number.isFinite(timestamp))
+  return timestamps.length > 0 ? new Date(Math.max(...timestamps)) : null
 }
 
 function SortIcon({ column, sortConfig }) {
@@ -48,7 +65,17 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('')
   const [marketFilter, setMarketFilter] = useState('all')
   const [sortConfig, setSortConfig] = useState({ key: 'drawdown', direction: 'desc' })
+  const [drawdownWindow, setDrawdownWindow] = useState(() => {
+    try {
+      return DRAWDOWN_WINDOWS.includes(window.localStorage.getItem('monitoring-drawdown-window'))
+        ? window.localStorage.getItem('monitoring-drawdown-window')
+        : '1y'
+    } catch {
+      return '1y'
+    }
+  })
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [refreshProgress, setRefreshProgress] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
@@ -99,9 +126,12 @@ export default function Dashboard() {
       if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
       setStocks(data)
-      setLastUpdated(new Date())
+      setLastUpdated(getLatestMarketTimestamp(data))
+      setLoadError('')
+      return data
     } catch (err) {
       console.error('Fetch error:', err)
+      setLoadError('暂时无法加载监控数据，请检查后端服务后重试。')
     } finally {
       setLoading(false)
     }
@@ -114,7 +144,7 @@ export default function Dashboard() {
     const results = await Promise.all(
       tickers.map(async (t) => {
         try {
-          const res = await fetch(`${API_BASE}/history/${encodeURIComponent(t)}?days=30`)
+          const res = await fetch(getPriceHistoryUrl(API_BASE, t, drawdownWindow))
           if (!res.ok) return [t, null]
           const data = await res.json()
           const points = (data.points || []).map((p) => p.drawdown)
@@ -130,15 +160,29 @@ export default function Dashboard() {
       for (const [t, pts] of results) next[t] = pts
       return next
     })
-  }, [])
+  }, [drawdownWindow])
 
-  // 首次拿到股票列表后拉一次历史（避免每次刷新都重拉）
-  const historiesLoadedRef = useRef(false)
+  // 仅在股票列表或周期变化时重拉本地快照；切换周期不会请求外部行情源。
+  const historiesLoadedRef = useRef('')
   useEffect(() => {
-    if (historiesLoadedRef.current || stocks.length === 0) return
-    historiesLoadedRef.current = true
+    if (stocks.length === 0) {
+      setHistoryMap({})
+      return
+    }
+    const requestKey = `${drawdownWindow}:${stocks.map((stock) => stock.ticker).sort().join(',')}`
+    if (historiesLoadedRef.current === requestKey) return
+    historiesLoadedRef.current = requestKey
+    setHistoryMap({})
     loadHistories(stocks.map((s) => s.ticker))
-  }, [stocks, loadHistories])
+  }, [stocks, drawdownWindow, loadHistories])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('monitoring-drawdown-window', drawdownWindow)
+    } catch {
+      // 隐私模式下无法持久化时仍保留本次会话的选择。
+    }
+  }, [drawdownWindow])
 
   const fetchAlertCount = useCallback(async () => {
     try {
@@ -227,8 +271,8 @@ export default function Dashboard() {
 
       // 最终兜底一次全量同步
       if (progress?.status === 'completed') {
-        await fetchData()
-        loadHistories(stocks.map((s) => s.ticker)) // 刷新后同步趋势数据
+        const refreshedStocks = await fetchData()
+        loadHistories((refreshedStocks || []).map((s) => s.ticker)) // 刷新后同步趋势数据
       } else if (progress?.status === 'error') {
         showToast('error', `刷新异常: ${progress.error || '未知错误'}`)
       }
@@ -257,6 +301,7 @@ export default function Dashboard() {
           }
           return prev
         })
+        loadHistories([ticker])
         showToast('success', `${data.stock?.name || label} 刷新成功`)
       } else {
         showToast('error', `${label} ${data.detail || '刷新失败'}`)
@@ -333,8 +378,8 @@ export default function Dashboard() {
   const sortedStocks = useMemo(() => {
     const sorted = [...filteredStocks]
     sorted.sort((a, b) => {
-      const aVal = a[sortConfig.key]
-      const bVal = b[sortConfig.key]
+      const aVal = getMonitoringSortValue(a, sortConfig.key, drawdownWindow)
+      const bVal = getMonitoringSortValue(b, sortConfig.key, drawdownWindow)
       if (aVal == null && bVal == null) return 0
       if (aVal == null) return 1
       if (bVal == null) return -1
@@ -346,7 +391,7 @@ export default function Dashboard() {
       return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal
     })
     return sorted
-  }, [filteredStocks, sortConfig])
+  }, [filteredStocks, sortConfig, drawdownWindow])
 
   const stats = useMemo(() => {
     const total = stocks.length
@@ -354,45 +399,49 @@ export default function Dashboard() {
     const cnCount = stocks.filter((s) => s.market === 'CN').length
     const hkCount = stocks.filter((s) => s.market === 'HK').length
 
-    const drawdowns = stocks.map((s) => s.drawdown).filter((v) => v != null)
+    const drawdowns = stocks
+      .map((s) => getMonitoringMetric(s, drawdownWindow).drawdown)
+      .filter((v) => v != null)
     const avgDrawdown =
       drawdowns.length > 0
         ? (drawdowns.reduce((a, b) => a + b, 0) / drawdowns.length).toFixed(2)
         : '--'
 
-    const overThreshold = stocks.filter((s) => {
-      if (!s.alert_enabled || s.drawdown == null || s.threshold == null) return false
-      return s.threshold > 0 && s.drawdown <= -s.threshold
-    }).length
+    const overThreshold = stocks.filter((s) => getOneYearAlertState(s) === 'breached').length
 
     let maxStock = null
     let maxDrawdown = Infinity
     stocks.forEach((s) => {
-      if (s.drawdown != null && s.drawdown < maxDrawdown) {
-        maxDrawdown = s.drawdown
+      const drawdown = getMonitoringMetric(s, drawdownWindow).drawdown
+      if (drawdown != null && drawdown < maxDrawdown) {
+        maxDrawdown = drawdown
         maxStock = s
       }
     })
 
     return { total, usCount, cnCount, hkCount, avgDrawdown, overThreshold, maxStock, maxDrawdown }
-  }, [stocks])
+  }, [stocks, drawdownWindow])
 
   const handleExportCSV = () => {
-    const headers = ['代码', '名称', '市场', '板块', '现价', '涨跌%', '52W高', '52W高日期', '回撤%', '阈值%', 'P/E', '距低%']
-    const rows = sortedStocks.map((s) => [
+    const windowLabel = DRAWDOWN_WINDOW_LABELS[drawdownWindow]
+    const headers = ['代码', '名称', '市场', '板块', '现价', '涨跌%', `${windowLabel}高点`, '高点日期', `${windowLabel}回撤%`, '固定1年提醒线%', 'P/E', '距低%']
+    const rows = sortedStocks.map((s) => {
+      const metric = getMonitoringMetric(s, drawdownWindow)
+      return [
       s.ticker,
       s.name || '',
       s.market || '',
       s.sector || '',
       s.current_price != null ? Number(s.current_price).toFixed(2) : '',
       s.change_pct != null ? Number(s.change_pct).toFixed(2) : '',
-      s.week52_high != null ? Number(s.week52_high).toFixed(2) : '',
-      s.week52_high_date || '',
-      s.drawdown != null ? Number(s.drawdown).toFixed(2) : '',
+      metric.high != null ? Number(metric.high).toFixed(2) : getMetricStateLabel(metric),
+      metric.high_date || '',
+      metric.drawdown != null ? Number(metric.drawdown).toFixed(2) : '',
       s.alert_enabled && s.threshold != null ? Number(s.threshold).toFixed(2) : '未启用',
       s.pe_ratio != null ? Number(s.pe_ratio).toFixed(1) : '',
-      s.distance_low_pct != null ? Number(s.distance_low_pct).toFixed(1) : '',
-    ])
+      metric.distance_low_pct != null ? Number(metric.distance_low_pct).toFixed(1) : '',
+    ]
+    })
     const csvContent = [headers, ...rows].map((r) => r.map((c) => `"${c}"`).join(',')).join('\n')
     const bom = '﻿'
     const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -404,10 +453,27 @@ export default function Dashboard() {
     URL.revokeObjectURL(url)
   }
 
+  const drawdownWindowLabel = DRAWDOWN_WINDOW_LABELS[drawdownWindow]
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32">
         <div className="animate-spin rounded-full h-10 w-10 border-2 border-sent-blue border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (loadError && stocks.length === 0) {
+    return (
+      <div className="bg-sent-card border border-sent-border rounded-lg px-6 py-16 text-center space-y-4">
+        <p className="text-sent-red">{loadError}</p>
+        <button
+          type="button"
+          onClick={fetchData}
+          className="px-3 py-1.5 text-xs bg-sent-blue/20 text-sent-blue rounded-lg hover:bg-sent-blue/30 transition-colors"
+        >
+          重新加载
+        </button>
       </div>
     )
   }
@@ -443,15 +509,15 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="bg-sent-card border border-sent-border rounded-lg p-4">
-          <div className="text-xs text-sent-dim mb-1">平均回撤</div>
+          <div className="text-xs text-sent-dim mb-1">平均回撤 · {drawdownWindowLabel}</div>
           <div className="text-2xl font-bold text-sent-yellow">{stats.avgDrawdown}%</div>
         </div>
         <div className="bg-sent-card border border-sent-border rounded-lg p-4">
-          <div className="text-xs text-sent-dim mb-1">越过关注线</div>
+          <div className="text-xs text-sent-dim mb-1" title="风险提醒固定按 1 年回撤判断">越过 1 年关注线</div>
           <div className="text-2xl font-bold text-sent-red">{stats.overThreshold}</div>
         </div>
         <div className="bg-sent-card border border-sent-border rounded-lg p-4">
-          <div className="text-xs text-sent-dim mb-1">最高回撤</div>
+          <div className="text-xs text-sent-dim mb-1">最大回撤 · {drawdownWindowLabel}</div>
           {stats.maxStock ? (
             <>
               <div className="text-lg font-bold text-sent-red">{stats.maxStock.ticker}</div>
@@ -488,11 +554,32 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold">📈 股票监控</h2>
             {lastUpdated && (
               <span className="text-xs text-sent-dim">
-                更新于 {lastUpdated.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                行情截至 {lastUpdated.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <div
+              className="flex bg-sent-border/30 rounded-lg p-0.5"
+              role="group"
+              aria-label="回撤统计周期"
+            >
+              {DRAWDOWN_WINDOWS.map((windowKey) => (
+                <button
+                  key={windowKey}
+                  type="button"
+                  onClick={() => setDrawdownWindow(windowKey)}
+                  aria-pressed={drawdownWindow === windowKey}
+                  className={`px-2.5 py-1.5 text-xs rounded-md transition-colors ${
+                    drawdownWindow === windowKey
+                      ? 'bg-sent-blue text-white'
+                      : 'text-sent-dim hover:text-white'
+                  }`}
+                >
+                  {DRAWDOWN_WINDOW_LABELS[windowKey]}
+                </button>
+              ))}
+            </div>
             {/* Market filter tabs */}
             <div className="flex bg-sent-border/30 rounded-lg p-0.5">
               {[
@@ -558,6 +645,12 @@ export default function Dashboard() {
           </div>
         </div>
 
+        <div className="px-4 py-2 border-b border-sent-border bg-sent-bg/40 text-xs text-sent-dim leading-5">
+          <span className="text-sent-blue font-medium">回撤口径：</span>
+          回撤 =（现价 − 所选周期内最高价）÷ 最高价。当前为 {drawdownWindowLabel}；统计、排序和趋势同步切换，
+          <span className="text-sent-yellow">风险提醒固定按 1 年回撤判断</span>。
+        </div>
+
         {/* Refresh Progress Bar */}
         {refreshProgress && (
           <div className="px-4 py-2 border-b border-sent-border bg-sent-bg/50">
@@ -605,28 +698,29 @@ export default function Dashboard() {
             placeholder="搜索股票代码或名称..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            aria-label="搜索股票代码或名称"
             className="w-full max-w-xs bg-sent-bg border border-sent-border rounded-lg px-3 py-2 text-sm text-white placeholder-sent-dim focus:outline-none focus:border-sent-blue"
           />
         </div>
 
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className={`${sortedStocks.length === 0 ? 'w-full' : 'w-full min-w-[860px]'} text-sm`}>
             <thead>
               <tr className="border-b border-sent-border text-sent-dim text-xs">
-                <th className="px-3 py-2.5 text-left cursor-pointer hover:text-white" onClick={() => handleSort('ticker')}>代码 <SortIcon column="ticker" sortConfig={sortConfig} /></th>
-                <th className="px-3 py-2.5 text-left cursor-pointer hover:text-white" onClick={() => handleSort('name')}>名称 <SortIcon column="name" sortConfig={sortConfig} /></th>
+                <th className="px-3 py-2.5 text-left"><button type="button" className="cursor-pointer hover:text-white" onClick={() => handleSort('ticker')}>代码 <SortIcon column="ticker" sortConfig={sortConfig} /></button></th>
+                <th className="px-3 py-2.5 text-left"><button type="button" className="cursor-pointer hover:text-white" onClick={() => handleSort('name')}>名称 <SortIcon column="name" sortConfig={sortConfig} /></button></th>
                 <th className="px-3 py-2.5 text-left whitespace-nowrap">市场</th>
-                <th className="px-3 py-2.5 text-left whitespace-nowrap">板块</th>
-                <th className="px-3 py-2.5 text-right cursor-pointer hover:text-white" onClick={() => handleSort('current_price')}>现价 <SortIcon column="current_price" sortConfig={sortConfig} /></th>
-                <th className="px-3 py-2.5 text-right cursor-pointer hover:text-white" onClick={() => handleSort('change_pct')}>涨跌 <SortIcon column="change_pct" sortConfig={sortConfig} /></th>
-                <th className="px-3 py-2.5 text-right whitespace-nowrap">52W高</th>
-                <th className="px-3 py-2.5 text-right whitespace-nowrap">52W高日期</th>
-                <th className="px-3 py-2.5 text-right whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleSort('drawdown')}>回撤 <SortIcon column="drawdown" sortConfig={sortConfig} /></th>
-                <th className="px-3 py-2.5 text-left whitespace-nowrap">趋势</th>
-                <th className="px-3 py-2.5 text-right whitespace-nowrap">阈值</th>
-                <th className="px-3 py-2.5 text-right whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleSort('pe_ratio')}>P/E</th>
-                <th className="px-3 py-2.5 text-right whitespace-nowrap">距低</th>
+                <th className="hidden xl:table-cell px-3 py-2.5 text-left whitespace-nowrap">板块</th>
+                <th className="px-3 py-2.5 text-right"><button type="button" className="cursor-pointer hover:text-white" onClick={() => handleSort('current_price')}>现价 <SortIcon column="current_price" sortConfig={sortConfig} /></button></th>
+                <th className="px-3 py-2.5 text-right"><button type="button" className="cursor-pointer hover:text-white" onClick={() => handleSort('change_pct')}>涨跌 <SortIcon column="change_pct" sortConfig={sortConfig} /></button></th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap">{drawdownWindowLabel}高点</th>
+                <th className="hidden lg:table-cell px-3 py-2.5 text-right whitespace-nowrap">高点日期</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap"><button type="button" className="cursor-pointer hover:text-white" onClick={() => handleSort('drawdown')}>回撤 · {drawdownWindowLabel} <SortIcon column="drawdown" sortConfig={sortConfig} /></button></th>
+                <th className="hidden lg:table-cell px-3 py-2.5 text-left whitespace-nowrap">趋势 · {drawdownWindowLabel}</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap" title="风险提醒固定以 1 年回撤为准">提醒线 · 1年</th>
+                <th className="hidden 2xl:table-cell px-3 py-2.5 text-right whitespace-nowrap"><button type="button" className="cursor-pointer hover:text-white" onClick={() => handleSort('pe_ratio')}>P/E <SortIcon column="pe_ratio" sortConfig={sortConfig} /></button></th>
+                <th className="hidden 2xl:table-cell px-3 py-2.5 text-right whitespace-nowrap">距低</th>
                 <th className="px-3 py-2.5 text-center">操作</th>
               </tr>
             </thead>
@@ -634,18 +728,51 @@ export default function Dashboard() {
               {sortedStocks.length === 0 ? (
                 <tr>
                   <td colSpan={14} className="px-4 py-12 text-center text-sent-dim">
-                    暂无数据
+                    {stocks.length === 0 ? (
+                      <div className="space-y-3">
+                        <p>还没有监控股票。添加后即可查看不同周期的回撤与固定 1 年提醒线。</p>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddModal(true)}
+                          className="px-3 py-1.5 text-xs bg-sent-blue/20 text-sent-blue rounded-lg hover:bg-sent-blue/30 transition-colors"
+                        >
+                          ＋ 添加第一只股票
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p>没有符合当前搜索或市场筛选的股票。</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchTerm('')
+                            setMarketFilter('all')
+                          }}
+                          className="text-xs text-sent-blue hover:text-white transition-colors"
+                        >
+                          清除筛选
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ) : (
-                sortedStocks.map((stock) => (
+                sortedStocks.map((stock) => {
+                  const metric = getMonitoringMetric(stock, drawdownWindow)
+                  const alertState = getOneYearAlertState(stock)
+                  const metricTitle = metric.status === 'ok'
+                    ? `计算区间：${metric.period_start} 至 ${metric.as_of}；区间最高价出现在 ${metric.high_date}`
+                    : metric.period_start
+                      ? `数据未覆盖 ${metric.period_start} 至 ${metric.as_of || '当前'} 的完整区间`
+                      : '该周期暂无可用日线数据'
+                  return (
                   <tr
                     key={stock.id}
                     className="border-b border-sent-border/50 hover:bg-white/[0.02] transition-colors"
                   >
                     <td className="px-3 py-2.5 font-mono text-white whitespace-nowrap">{stock.ticker}</td>
                     <td className="px-3 py-2.5 text-white whitespace-nowrap">{stock.name || '--'}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
+                    <td className="hidden xl:table-cell px-3 py-2.5 whitespace-nowrap">
                       <span
                         className={`inline-block px-2 py-0.5 rounded text-xs ${getMarketBadgeClass(
                           stock.market
@@ -675,33 +802,40 @@ export default function Dashboard() {
                             : `${stock.change_pct >= 0 ? '+' : ''}${Number(stock.change_pct).toFixed(2)}%`)
                         : '--'}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-mono text-sent-dim whitespace-nowrap">
-                      {stock.week52_high != null
-                        ? `${getCurrency(stock.market)}${Number(stock.week52_high).toFixed(2)}`
-                        : '--'}
+                    <td className="px-3 py-2.5 text-right font-mono text-sent-dim whitespace-nowrap" title={metricTitle}>
+                      {metric.high != null
+                        ? `${getCurrency(stock.market)}${Number(metric.high).toFixed(2)}`
+                        : getMetricStateLabel(metric)}
                     </td>
-                    <td className="px-3 py-2.5 text-right text-sent-dim text-xs whitespace-nowrap">
-                      {stock.week52_high_date || '--'}
+                    <td className="hidden lg:table-cell px-3 py-2.5 text-right text-sent-dim text-xs whitespace-nowrap" title={metricTitle}>
+                      {metric.high_date || '--'}
                     </td>
-                    <td className={`px-3 py-2.5 text-right font-mono whitespace-nowrap ${getDrawdownClass(stock.drawdown)}`}>
-                      {stock.drawdown != null
-                        ? `${Number(stock.drawdown).toFixed(2)}%`
-                        : '--'}
+                    <td className={`px-3 py-2.5 text-right font-mono whitespace-nowrap ${getDrawdownClass(metric.drawdown)}`} title={metricTitle}>
+                      {metric.drawdown != null
+                        ? `${Number(metric.drawdown).toFixed(2)}%`
+                        : getMetricStateLabel(metric)}
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap" title="近 30 天回撤走势">
-                      <Sparkline points={historyMap[stock.ticker] ?? null} status={stock.market_status} />
+                    <td className="hidden lg:table-cell px-3 py-2.5 whitespace-nowrap" title={`近 30 天 ${drawdownWindowLabel} 回撤走势`}>
+                      <Sparkline
+                        points={historyMap[stock.ticker] ?? null}
+                        status={metric.status === 'ok' ? 'info' : 'unknown'}
+                        ariaLabel={`近 30 天 ${stock.ticker} ${drawdownWindowLabel} 回撤走势`}
+                      />
                     </td>
-                    <td className="px-3 py-2.5 text-right text-sent-dim whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-right text-sent-dim whitespace-nowrap" title="风险提醒固定以 1 年回撤判断">
                       {stock.alert_enabled && stock.threshold != null
-                        ? `${Number(stock.threshold).toFixed(1)}%`
+                        ? <span className={getAlertStateClass(alertState)}>
+                            {alertState === 'breached' ? '已越线' : alertState === 'unavailable' ? '数据不足' : '关注'}
+                            {alertState !== 'unavailable' && ` ${Number(stock.threshold).toFixed(1)}% · 1年`}
+                          </span>
                         : '未启用'}
                     </td>
-                    <td className="px-3 py-2.5 text-right text-sent-dim whitespace-nowrap">
+                    <td className="hidden 2xl:table-cell px-3 py-2.5 text-right text-sent-dim whitespace-nowrap">
                       {stock.pe_ratio != null ? Number(stock.pe_ratio).toFixed(1) : '--'}
                     </td>
-                    <td className="px-3 py-2.5 text-right text-sent-dim whitespace-nowrap">
-                      {stock.distance_low_pct != null
-                        ? `${Number(stock.distance_low_pct).toFixed(1)}%`
+                    <td className="hidden 2xl:table-cell px-3 py-2.5 text-right text-sent-dim whitespace-nowrap" title={metricTitle}>
+                      {metric.distance_low_pct != null
+                        ? `${Number(metric.distance_low_pct).toFixed(1)}%`
                         : '--'}
                     </td>
                     <td className="px-3 py-2.5 text-center whitespace-nowrap">
@@ -734,7 +868,8 @@ export default function Dashboard() {
                       </button>
                     </td>
                   </tr>
-                ))
+                  )
+                })
               )}
             </tbody>
           </table>
@@ -815,7 +950,7 @@ export default function Dashboard() {
                           </span>
                         </div>
                         <div className="text-sm text-sent-dim space-y-1">
-                          <div>{alert.event_type === 'breach' ? '首次越过 52 周回撤关注线' : '风险提醒'} · {alert.name || alert.ticker}</div>
+                          <div>{alert.event_type === 'breach' ? '首次越过固定 1 年回撤关注线' : '风险提醒'} · {alert.name || alert.ticker}</div>
                           <div className="flex gap-4">
                             <span>回撤：<span className="text-sent-red font-mono">{alert.drawdown_pct != null ? `${Number(alert.drawdown_pct).toFixed(2)}%` : '--'}</span></span>
                             <span>关注线：<span className="text-sent-yellow font-mono">{alert.threshold != null ? `${Number(alert.threshold).toFixed(2)}%` : '--'}</span></span>
@@ -900,7 +1035,7 @@ export default function Dashboard() {
               <div className="flex items-center gap-3 text-sm text-sent-dim mb-2">
                 <span>{editingStock.name || editingStock.ticker}</span>
                 <span>现价: {editingStock.current_price != null ? getCurrency(editingStock.market) + Number(editingStock.current_price).toFixed(2) : '--'}</span>
-                <span>当前回撤: <span className={getDrawdownClass(editingStock.drawdown)}>{editingStock.drawdown != null ? Number(editingStock.drawdown).toFixed(2) + '%' : '--'}</span></span>
+                <span>当前 1 年回撤: <span className={getDrawdownClass(editingStock.drawdown)}>{editingStock.drawdown != null ? Number(editingStock.drawdown).toFixed(2) + '%' : '数据不足'}</span></span>
               </div>
               <div>
                 <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
@@ -910,7 +1045,7 @@ export default function Dashboard() {
                     onChange={(e) => setEditAlertEnabled(e.target.checked)}
                     className="accent-sent-blue"
                   />
-                  启用 52 周回撤风险提醒
+                  启用固定 1 年回撤风险提醒
                 </label>
                 <p className="text-xs text-sent-dim mt-1">关闭后不会生成提醒，重新开启会从当前状态重新判断。</p>
               </div>
@@ -927,7 +1062,7 @@ export default function Dashboard() {
                   max="94"
                   autoFocus
                 />
-                <p className="text-xs text-sent-dim mt-1">回撤达到此线时仅提醒一次，收窄至少 2 个百分点后才重新布防。</p>
+                <p className="text-xs text-sent-dim mt-1">固定 1 年回撤达到此线时仅提醒一次，收窄至少 2 个百分点后才重新布防。</p>
               </div>
               {editError && (
                 <div className="text-xs text-sent-red bg-sent-red/10 px-3 py-2 rounded-lg">{editError}</div>
