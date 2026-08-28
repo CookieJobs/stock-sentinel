@@ -250,10 +250,10 @@ def format_alert_message(stock: StockResponse) -> str:
         f"[StockSentinel 告警] {stock.ticker} 回撤超限\n"
         f"股票：{stock.name} ({stock.ticker})\n"
         f"市场：{stock.market}\n"
-        f"当前回撤：{stock.drawdown:.2f}%\n"
+        f"当前 1 年回撤：{stock.drawdown:.2f}%\n"
         f"阈值：{abs(stock.threshold):.2f}%\n"
         f"现价：{currency}{stock.current_price:.2f}\n"
-        f"52W高：{currency}{stock.week52_high:.2f} ({stock.week52_high_date})"
+        f"1 年高点：{currency}{stock.week52_high:.2f} ({stock.week52_high_date})"
     )
 
 

@@ -1,6 +1,7 @@
 """股票监控核心逻辑 — CRUD + 数据刷新"""
 import os
 import re
+import json
 import uuid
 import threading
 import sqlite3
@@ -90,12 +91,33 @@ class StockMonitor:
             week52_high_date=row["week52_high_date"],
             week52_low_date=row["week52_low_date"],
             drawdown=row["drawdown"],
+            drawdown_windows=self._decode_drawdown_windows(
+                row["drawdown_windows"] if "drawdown_windows" in row.keys() else None
+            ),
             distance_low_pct=row["distance_low_pct"],
             pe_ratio=row["pe_ratio"],
             market_status=row["market_status"] or "未知",
             last_updated=row["last_updated"],
             created_at=row["created_at"],
         )
+
+    @staticmethod
+    def _decode_drawdown_windows(raw: Optional[str]) -> Optional[Dict[str, Dict[str, Any]]]:
+        """从 SQLite JSON 字段恢复多周期回撤；损坏或存量空值都如实返回无数据。"""
+        if not raw:
+            return None
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if isinstance(value, dict) else None
+
+    @staticmethod
+    def _encode_drawdown_windows(value: Optional[Dict[str, Dict[str, Any]]]) -> Optional[str]:
+        """持久化多周期回撤快照，避免前端切换周期时额外请求行情源。"""
+        if not value:
+            return None
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
     def get_all_stocks(self) -> List[StockResponse]:
         """获取所有监控股票"""
@@ -161,6 +183,7 @@ class StockMonitor:
             week52_high_date = None
             week52_low_date = None
             drawdown = None
+            drawdown_windows = None
             distance_low_pct = None
             pe_ratio = None
             market_status = "未知"
@@ -179,6 +202,7 @@ class StockMonitor:
                 week52_high_date = data.get("week52_high_date")
                 week52_low_date = data.get("week52_low_date")
                 drawdown = data.get("drawdown")
+                drawdown_windows = data.get("drawdown_windows")
                 distance_low_pct = data.get("distance_low_pct")
                 pe_ratio = data.get("pe_ratio")
                 market_status = data.get("market_status", "未知")
@@ -188,11 +212,11 @@ class StockMonitor:
                 """INSERT INTO stocks
                    (ticker, name, market, threshold, alert_enabled, current_price, change_pct, ah_change_pct, ah_change_label, sector,
                     week52_high, week52_low, week52_high_date, week52_low_date,
-                    drawdown, distance_low_pct, pe_ratio, market_status, last_updated)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    drawdown, drawdown_windows, distance_low_pct, pe_ratio, market_status, last_updated)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (ticker, stock_name, market, threshold, int(alert_enabled), current_price, change_pct, ah_change_pct, ah_change_label, sector,
                  week52_high, week52_low, week52_high_date, week52_low_date,
-                 drawdown, distance_low_pct, pe_ratio, market_status, last_updated),
+                 drawdown, self._encode_drawdown_windows(drawdown_windows), distance_low_pct, pe_ratio, market_status, last_updated),
             )
             db.commit()
 
@@ -213,6 +237,7 @@ class StockMonitor:
                 week52_high_date=week52_high_date,
                 week52_low_date=week52_low_date,
                 drawdown=drawdown,
+                drawdown_windows=drawdown_windows,
                 distance_low_pct=distance_low_pct,
                 pe_ratio=pe_ratio,
                 market_status=market_status,
@@ -285,7 +310,7 @@ class StockMonitor:
                 """UPDATE stocks SET
                     name = ?, market = ?, current_price = ?, change_pct = ?, ah_change_pct = ?, ah_change_label = ?, sector = ?,
                     week52_high = ?, week52_low = ?, week52_high_date = ?, week52_low_date = ?,
-                    drawdown = ?, distance_low_pct = ?, pe_ratio = ?, market_status = ?,
+                    drawdown = ?, drawdown_windows = ?, distance_low_pct = ?, pe_ratio = ?, market_status = ?,
                     last_updated = ?
                    WHERE ticker = ?""",
                 (
@@ -301,6 +326,7 @@ class StockMonitor:
                     data.get("week52_high_date"),
                     data.get("week52_low_date"),
                     data.get("drawdown"),
+                    self._encode_drawdown_windows(data.get("drawdown_windows")),
                     data.get("distance_low_pct"),
                     data.get("pe_ratio"),
                     data.get("market_status", "未知"),
@@ -388,6 +414,7 @@ class StockMonitor:
                             "current_price": stock.current_price,
                             "change_pct": stock.change_pct,
                             "drawdown": stock.drawdown,
+                            "drawdown_windows": stock.drawdown_windows,
                             "week52_high": stock.week52_high,
                             "week52_low": stock.week52_low,
                             "pe_ratio": stock.pe_ratio,
@@ -441,8 +468,8 @@ class StockMonitor:
         try:
             db.execute(
                 """INSERT OR REPLACE INTO price_history
-                   (ticker, market, name, bucket, current_price, change_pct, drawdown, week52_high, captured_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (ticker, market, name, bucket, current_price, change_pct, drawdown, week52_high, drawdown_windows, captured_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     data.get("ticker"),
                     data.get("market"),
@@ -452,6 +479,7 @@ class StockMonitor:
                     data.get("change_pct"),
                     data.get("drawdown"),
                     data.get("week52_high"),
+                    self._encode_drawdown_windows(data.get("drawdown_windows")),
                     now.isoformat(),
                 ),
             )
@@ -461,21 +489,32 @@ class StockMonitor:
         finally:
             db.close()
 
-    def get_price_history(self, ticker: str, days: int = 30) -> dict:
-        """查询单只股票的历史行情序列（升序），供趋势图使用"""
+    def get_price_history(self, ticker: str, days: int = 30, window: str = "1y") -> dict:
+        """查询与指定回撤周期一致的历史行情序列（升序）。"""
         ticker = ticker.strip().upper()
+        if window not in {"3m", "6m", "1y"}:
+            raise ValueError("回撤周期仅支持 3m、6m 或 1y")
         days = max(1, min(int(days), 90))
         cutoff = (datetime.now(timezone(timedelta(hours=8))) - timedelta(days=days)).isoformat()
         db = get_db()
         try:
             rows = db.execute(
-                """SELECT bucket, market, captured_at, current_price, change_pct, drawdown, week52_high
+                """SELECT bucket, market, captured_at, current_price, change_pct, drawdown, week52_high, drawdown_windows
                    FROM price_history WHERE ticker = ? AND captured_at >= ?
                    ORDER BY bucket ASC""",
                 (ticker, cutoff),
             ).fetchall()
         finally:
             db.close()
-        points = [dict(r) for r in rows]
+        points = []
+        for row in rows:
+            point = dict(row)
+            windows = self._decode_drawdown_windows(point.pop("drawdown_windows", None))
+            selected = (windows or {}).get(window) or {}
+            point["drawdown"] = selected.get("drawdown") if selected.get("status") == "ok" else None
+            point["window_status"] = selected.get("status", "unavailable")
+            point["window_high"] = selected.get("high")
+            point["window_high_date"] = selected.get("high_date")
+            points.append(point)
         market = points[0]["market"] if points else None
-        return {"ticker": ticker, "market": market, "days": days, "points": points}
+        return {"ticker": ticker, "market": market, "days": days, "window": window, "points": points}

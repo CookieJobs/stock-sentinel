@@ -561,12 +561,9 @@ class DataFetcher:
                 "change_pct": change_pct,
                 "ah_change_pct": ah_change_pct,
                 "ah_change_label": ah_change_label,
-                "week52_high": week52_high,
-                "week52_low": week52_low,
-                "week52_high_date": week52_high_date,
-                "week52_low_date": week52_low_date,
+                **legacy,
+                "drawdown_windows": drawdown_windows,
                 "drawdown": drawdown,
-                "distance_low_pct": distance_low_pct,
                 "pe_ratio": pe_ratio,
                 "sector": sector,
                 "market_status": DataFetcher.get_market_status(drawdown),
@@ -620,63 +617,12 @@ class DataFetcher:
             pe_raw = data.get("f162")
             pe_ratio = (pe_raw / 100) if pe_raw is not None and pe_raw != "-" else None
 
-            # ── K 线: 52 周高低点 ──
-            week52_high = None
-            week52_low = None
-            week52_high_date = None
-            week52_low_date = None
-
-            try:
-                kresp = _em_get(
-                    EASTMONEY_KLINE_HOST, EASTMONEY_KLINE_PATH,
-                    {
-                        "secid": secid,
-                        "fields1": "f1,f2,f3,f4,f5,f6",
-                        "fields2": "f51,f52,f53,f54,f55,f56,f57",
-                        "klt": "101",
-                        "fqt": "1",
-                        "end": "20500101",
-                        "lmt": "300",
-                    },
-                    15,
-                )
-                if kresp.status_code == 200:
-                    kdata = kresp.json().get("data")
-                    if kdata and kdata.get("klines"):
-                        # 格式: date,open,close,high,low,volume,amount,amplitude
-                        #        parts[0]   [1]   [2]  [3]  [4]   [5]    [6]     [7]
-                        max_high = -float("inf")
-                        min_low = float("inf")
-                        h_date = ""
-                        l_date = ""
-                        for line in kdata["klines"]:
-                            parts = line.split(",")
-                            if len(parts) < 5:
-                                continue
-                            try:
-                                h = float(parts[3])
-                                lo = float(parts[4])
-                            except ValueError:
-                                continue
-                            if h > max_high:
-                                max_high = h
-                                h_date = parts[0]
-                            if lo < min_low:
-                                min_low = lo
-                                l_date = parts[0]
-                        if max_high > -float("inf"):
-                            week52_high = max_high
-                            week52_high_date = h_date
-                        if min_low < float("inf"):
-                            week52_low = min_low
-                            week52_low_date = l_date
-            except Exception:
-                logger.debug("EastMoney K-line failed for A-share %s", ticker, exc_info=True)
-
-            # 组装
-            distance_low_pct = DataFetcher._calc_distance_low(current_price, week52_low)
-            drawdown = DataFetcher.calculate_drawdown(current_price, week52_high)
             now = datetime.now()
+            drawdown_windows = DataFetcher.calculate_drawdown_windows(
+                current_price, DataFetcher._get_eastmoney_daily_bars(secid), now
+            )
+            legacy = DataFetcher._legacy_metrics_from_windows(drawdown_windows)
+            drawdown = legacy["drawdown"]
 
             return {
                 "ticker": ticker,
@@ -685,12 +631,9 @@ class DataFetcher:
                 "source": "eastmoney",
                 "current_price": round(current_price, 2),
                 "change_pct": round(change_pct, 2) if change_pct is not None else None,
-                "week52_high": week52_high,
-                "week52_low": week52_low,
-                "week52_high_date": week52_high_date,
-                "week52_low_date": week52_low_date,
+                **legacy,
+                "drawdown_windows": drawdown_windows,
                 "drawdown": drawdown,
-                "distance_low_pct": distance_low_pct,
                 "pe_ratio": pe_ratio,
                 "market_status": DataFetcher.get_market_status(drawdown),
                 "last_updated": now.isoformat(),
@@ -743,64 +686,12 @@ class DataFetcher:
             pe_raw = data.get("f162") or data.get("f173")
             pe_ratio = pe_raw if (pe_raw is not None and pe_raw != "-") else None
 
-            # ── K 线: 52 周高低点 ──
-            week52_high = None
-            week52_low = None
-            week52_high_date = None
-            week52_low_date = None
-
-            try:
-                kresp = _SESSION.get(
-                    EASTMONEY_KLINE_URL,
-                    params={
-                        "secid": secid,
-                        "fields1": "f1,f2,f3,f4,f5,f6",
-                        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
-                        "klt": "101",
-                        "fqt": "1",
-                        "end": "20500101",
-                        "lmt": "300",
-                    },
-                    timeout=15,
-                    headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
-                )
-                if kresp and kresp.status_code == 200:
-                    kdata = kresp.json().get("data")
-                    if kdata and kdata.get("klines"):
-                        # 格式: date,open,close,high,low,volume,amount,amplitude,chg%,chg,turnover%
-                        #        parts[0]   [1]   [2]  [3]  [4]   [5]    [6]     [7]     [8]  [9]   [10]
-                        max_high = -float("inf")
-                        min_low = float("inf")
-                        h_date = ""
-                        l_date = ""
-                        for line in kdata["klines"]:
-                            parts = line.split(",")
-                            if len(parts) < 5:
-                                continue
-                            try:
-                                h = float(parts[3])
-                                lo = float(parts[4])
-                            except ValueError:
-                                continue
-                            if h > max_high:
-                                max_high = h
-                                h_date = parts[0]
-                            if lo < min_low:
-                                min_low = lo
-                                l_date = parts[0]
-                        if max_high > -float("inf"):
-                            week52_high = max_high
-                            week52_high_date = h_date
-                        if min_low < float("inf"):
-                            week52_low = min_low
-                            week52_low_date = l_date
-            except Exception:
-                logger.debug("EastMoney K-line failed for HK %s", ticker, exc_info=True)
-
-            # 组装
-            distance_low_pct = DataFetcher._calc_distance_low(current_price, week52_low)
-            drawdown = DataFetcher.calculate_drawdown(current_price, week52_high)
             now = datetime.now()
+            drawdown_windows = DataFetcher.calculate_drawdown_windows(
+                current_price, DataFetcher._get_eastmoney_daily_bars(secid), now
+            )
+            legacy = DataFetcher._legacy_metrics_from_windows(drawdown_windows)
+            drawdown = legacy["drawdown"]
 
             return {
                 "ticker": ticker,
@@ -809,12 +700,9 @@ class DataFetcher:
                 "source": "eastmoney",
                 "current_price": current_price,
                 "change_pct": change_pct,
-                "week52_high": week52_high,
-                "week52_low": week52_low,
-                "week52_high_date": week52_high_date,
-                "week52_low_date": week52_low_date,
+                **legacy,
+                "drawdown_windows": drawdown_windows,
                 "drawdown": drawdown,
-                "distance_low_pct": distance_low_pct,
                 "pe_ratio": pe_ratio,
                 "market_status": DataFetcher.get_market_status(drawdown),
                 "last_updated": now.isoformat(),
@@ -858,10 +746,12 @@ class DataFetcher:
             change_pct = _to_float(parts[32])
             pe_ratio = _to_float(parts[39]) if market == "CN" else None
 
-            week52_high, week52_low, h_date, l_date = DataFetcher._get_tencent_kline_52w(secid)
-            drawdown = DataFetcher.calculate_drawdown(current_price, week52_high)
-            distance_low_pct = DataFetcher._calc_distance_low(current_price, week52_low)
             now = datetime.now()
+            drawdown_windows = DataFetcher.calculate_drawdown_windows(
+                current_price, DataFetcher._get_tencent_daily_bars(secid), now
+            )
+            legacy = DataFetcher._legacy_metrics_from_windows(drawdown_windows)
+            drawdown = legacy["drawdown"]
 
             return {
                 "ticker": ticker,
@@ -870,12 +760,9 @@ class DataFetcher:
                 "source": "tencent",
                 "current_price": current_price,
                 "change_pct": change_pct,
-                "week52_high": week52_high,
-                "week52_low": week52_low,
-                "week52_high_date": h_date,
-                "week52_low_date": l_date,
+                **legacy,
+                "drawdown_windows": drawdown_windows,
                 "drawdown": drawdown,
-                "distance_low_pct": distance_low_pct,
                 "pe_ratio": pe_ratio,
                 "market_status": DataFetcher.get_market_status(drawdown),
                 "last_updated": now.isoformat(),
@@ -885,42 +772,62 @@ class DataFetcher:
             return None
 
     @staticmethod
-    def _get_tencent_kline_52w(secid: str) -> tuple:
-        """腾讯日 K 计算 52 周高低点（320 根日线 ≈ 1.2 年，对齐东财 klt=101/lmt=300），
-        返回 (high, low, high_date, low_date)"""
+    def _get_tencent_daily_bars(secid: str) -> list[dict]:
+        """读取腾讯日 K 线，覆盖 1 年窗口及首尾交易日余量。"""
+        return DataFetcher._cached_daily_bars(
+            f"tencent:{secid}",
+            lambda: DataFetcher._fetch_tencent_daily_bars(secid),
+        )
+
+    @staticmethod
+    def _fetch_tencent_daily_bars(secid: str) -> list[dict]:
         try:
             resp = _SESSION.get(
                 "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
-                params={"param": f"{secid},day,,,320,qfq"},
+                params={"param": f"{secid},day,,,400,qfq"},
                 timeout=12,
                 headers={"Referer": "https://gu.qq.com/", "User-Agent": "Mozilla/5.0"},
             )
             if resp.status_code != 200:
-                return None, None, None, None
+                return []
             data = resp.json().get("data", {}).get(secid, {})
             bars = data.get("qfqday") or data.get("day") or []
-            max_high = -float("inf")
-            min_low = float("inf")
-            h_date = l_date = None
+            normalized = []
             for b in bars:
                 if not isinstance(b, list) or len(b) < 5:
                     continue
                 try:
-                    high = float(b[3])
-                    low = float(b[4])
-                    date = b[0]
+                    normalized.append({
+                        "trade_date": b[0],
+                        "high": float(b[3]),
+                        "low": float(b[4]),
+                    })
                 except (ValueError, TypeError):
                     continue
-                if high > max_high:
-                    max_high, h_date = high, date
-                if low < min_low:
-                    min_low, l_date = low, date
-            if max_high == -float("inf"):
-                return None, None, None, None
-            return max_high, min_low, h_date, l_date
+            return normalized
         except Exception:
-            logger.warning("Tencent weekly kline exception for %s", secid, exc_info=True)
+            logger.warning("Tencent daily kline exception for %s", secid, exc_info=True)
+            return []
+
+    @staticmethod
+    def _get_tencent_kline_52w(secid: str) -> tuple:
+        """兼容旧调用：返回固定 1 年窗口的高低点及日期。"""
+        today = datetime.now().date()
+        period_start = DataFetcher._subtract_months(today, 12)
+        bars = []
+        for bar in DataFetcher._get_tencent_daily_bars(secid):
+            try:
+                trade_date = datetime.fromisoformat(str(bar["trade_date"])[:10]).date()
+                if period_start <= trade_date <= today:
+                    bars.append((trade_date, float(bar["high"]), float(bar["low"])))
+            except (KeyError, TypeError, ValueError):
+                continue
+        if not bars:
             return None, None, None, None
+        high_date, high, low_date, low = DataFetcher._window_extremes(bars)
+        return (
+            high, low, high_date.isoformat(), low_date.isoformat(),
+        )
 
     # ── 工具方法 ──────────────────────────────────────────────
 

@@ -45,6 +45,7 @@ def init_db():
             week52_high_date TEXT,
             week52_low_date TEXT,
             drawdown REAL,
+            drawdown_windows TEXT,
             distance_low_pct REAL,
             pe_ratio REAL,
             market_status TEXT DEFAULT '未知',
@@ -65,6 +66,10 @@ def init_db():
         pass
     try:
         cursor.execute("ALTER TABLE stocks ADD COLUMN distance_low_pct REAL")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE stocks ADD COLUMN drawdown_windows TEXT")
     except sqlite3.OperationalError:
         pass
     try:
@@ -167,10 +172,15 @@ def init_db():
             change_pct REAL,
             drawdown REAL,
             week52_high REAL,
+            drawdown_windows TEXT,
             captured_at TEXT NOT NULL,     -- ISO 时间戳（北京时间）
             UNIQUE(ticker, bucket)
         )
     """)
+    try:
+        cursor.execute("ALTER TABLE price_history ADD COLUMN drawdown_windows TEXT")
+    except sqlite3.OperationalError:
+        pass
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker, bucket)")
 
     db.commit()

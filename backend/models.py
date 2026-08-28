@@ -1,5 +1,5 @@
 """Pydantic 数据模型"""
-from typing import Optional
+from typing import Any, Dict, Optional
 from pydantic import BaseModel
 
 
@@ -20,6 +20,7 @@ class StockResponse(BaseModel):
     week52_high_date: Optional[str] = None
     week52_low_date: Optional[str] = None
     drawdown: Optional[float] = None
+    drawdown_windows: Optional[Dict[str, Dict[str, Any]]] = None
     distance_low_pct: Optional[float] = None
     pe_ratio: Optional[float] = None
     market_status: Optional[str] = "未知"
