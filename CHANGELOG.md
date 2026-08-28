@@ -304,3 +304,10 @@ AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加�
 - 新增 `backend/test_stock_management.py`（6 个临时 SQLite API 回归测试），不访问外部行情、不读写真实 `data/sentinel.db`。
 - 验证：`python backend/test_data_fetcher.py`、`python -m pytest backend/test_*.py -q`（25 passed）、`python -m pytest backend/tests/ -q`（232 passed，1 条既有运行时 warning）、前端 lint + build 通过。
 - 与「优化首页股票监控模块」会话隔离：未修改 `frontend/src/pages/Dashboard.jsx` 或首页样式。
+## 2026-08-28 — 名称优先新增股票与跨市场选择
+
+- 新增股票弹窗改为只输入公司名称（支持名称/拼音搜索），候选项显示名称、代码与市场；普通候选点选后即以默认设置加入监控，不再要求填写代码、名称或提醒阈值。
+- 同名候选覆盖多个市场时，弹窗要求显式选择范围：可只选一个、勾选多个，或一键全选，默认只勾选用户先点击的市场，避免误监控。
+- 新增 `AddStockModal` 与跨市场候选分组测试；Dashboard 只保留弹窗入口接线，未修改首页监控表格、筛选、统计或布局。
+- 测试隔离：`test_factors_refresh` 改为 mock 路由绑定的 `refresh_universe`，只验证 API 合约，不再因真实全市场数据源与代理网络卡住。
+- 验证：`node --test src/lib/stockSearch.test.js`、前端 lint/build、`python backend/test_data_fetcher.py`、根目录后端测试 25 passed、量化测试 232 passed（1 条既有零初始资金 RuntimeWarning）。
