@@ -47,7 +47,7 @@ Export the four named helpers. Do not place React state or network requests in t
 
 Run `node --test frontend/src/lib/backtest-flow.test.js`. All tests must pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit the helper and its test as `feat(ui): 增加回测新手流程规则`.
 
@@ -80,7 +80,7 @@ Replace the code text field with search, selected-stock tags, two mode controls,
 
 Run the Node test after the page uses the helper.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit the page and test changes as `feat(ui): 回测页支持名称选股与渐进设置`.
 
@@ -105,6 +105,6 @@ Open `/backtest`; verify Chinese-name search, direct code entry, tag removal, mo
 
 Mark the PRD and issue `done`; add the date, changes, checks and the Tushare sandbox baseline limitation to `CHANGELOG.md`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 Commit the documentation and generated static assets as `docs: 记录回测新手流程交付`.
