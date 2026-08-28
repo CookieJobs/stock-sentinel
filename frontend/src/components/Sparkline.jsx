@@ -1,13 +1,14 @@
 // 纯 SVG 回撤趋势 sparkline — 不引入图表库
 // points: drawdown 数值序列（负数表示回撤，值越小越深）
 const TREND_COLORS = {
+  info: '#60a5fa',
   alert: '#f87171',
   warning: '#fbbf24',
   normal: '#34d399',
   unknown: '#6b7280',
 }
 
-export default function Sparkline({ points, status, width = 96, height = 28 }) {
+export default function Sparkline({ points, status, width = 96, height = 28, ariaLabel = '回撤趋势' }) {
   const vals = Array.isArray(points) ? points.filter((v) => v != null) : []
   if (vals.length < 2) {
     return <span className="text-sent-dim text-xs whitespace-nowrap">暂无趋势</span>
@@ -31,7 +32,7 @@ export default function Sparkline({ points, status, width = 96, height = 28 }) {
       height={height}
       viewBox={`0 0 ${width} ${height}`}
       className="inline-block align-middle"
-      aria-label="回撤趋势"
+      aria-label={ariaLabel}
       role="img"
     >
       <polyline
