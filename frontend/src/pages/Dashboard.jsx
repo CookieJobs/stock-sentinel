@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import AddStockModal from '../components/AddStockModal'
+import AssignStocksToGroupsModal from '../components/AssignStocksToGroupsModal'
 import BriefingModal from '../components/BriefingModal'
+import GroupManagerModal from '../components/GroupManagerModal'
 import Sparkline from '../components/Sparkline'
 import {
   DRAWDOWN_WINDOWS,
@@ -11,6 +13,7 @@ import {
   getOneYearAlertState,
   getPriceHistoryUrl,
 } from '../lib/monitoring'
+import { filterStocksByGroup, toggleVisibleSelection } from '../lib/stockGroups'
 
 const API_BASE = '/api'
 
@@ -64,6 +67,9 @@ export default function Dashboard() {
   const [stocks, setStocks] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [marketFilter, setMarketFilter] = useState('all')
+  const [groups, setGroups] = useState([])
+  const [activeGroupId, setActiveGroupId] = useState('all')
+  const [selectedStockIds, setSelectedStockIds] = useState(new Set())
   const [sortConfig, setSortConfig] = useState({ key: 'drawdown', direction: 'desc' })
   const [drawdownWindow, setDrawdownWindow] = useState(() => {
     try {
@@ -108,6 +114,8 @@ export default function Dashboard() {
 
   // Add stock modal
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showGroupManager, setShowGroupManager] = useState(false)
+  const [showGroupAssignment, setShowGroupAssignment] = useState(false)
 
   // Edit stock modal
   const [editingStock, setEditingStock] = useState(null)
@@ -119,6 +127,8 @@ export default function Dashboard() {
   // Delete confirmation
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
   const [deletingStock, setDeletingStock] = useState(false)
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
+  const [bulkActionLoading, setBulkActionLoading] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -134,6 +144,23 @@ export default function Dashboard() {
       setLoadError('暂时无法加载监控数据，请检查后端服务后重试。')
     } finally {
       setLoading(false)
+    }
+  }, [])
+
+  const fetchGroups = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/stock-groups/`)
+      if (!response.ok) throw new Error('获取分组失败')
+      const data = await response.json()
+      setGroups(data)
+      setActiveGroupId((previous) => (
+        previous === 'all' || data.some((group) => group.id === previous) ? previous : 'all'
+      ))
+      return data
+    } catch (err) {
+      console.error('Fetch groups error:', err)
+      showToast('error', '分组暂时无法加载，请稍后重试')
+      return []
     }
   }, [])
 
@@ -219,10 +246,20 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchData()
+    fetchGroups()
     fetchAlertCount()
     const interval = setInterval(fetchAlertCount, 30000)
     return () => clearInterval(interval)
-  }, [fetchData, fetchAlertCount])
+  }, [fetchData, fetchGroups, fetchAlertCount])
+
+  useEffect(() => {
+    setSelectedStockIds(new Set())
+  }, [activeGroupId, marketFilter, searchTerm])
+
+  useEffect(() => {
+    const validIds = new Set(stocks.map((stock) => stock.id))
+    setSelectedStockIds((previous) => new Set([...previous].filter((id) => validIds.has(id))))
+  }, [stocks])
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -345,12 +382,13 @@ export default function Dashboard() {
     if (!showDeleteConfirm) return
     setDeletingStock(true)
     try {
-      const res = await fetch(`${API_BASE}/stocks/${showDeleteConfirm.id}`, { method: 'DELETE' })
+      const res = await fetch(`${API_BASE}/stocks/${showDeleteConfirm.ticker}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('删除失败')
       setShowDeleteConfirm(null)
       await fetchData()
+      await fetchGroups()
     } catch (err) {
-      console.error('Delete error:', err)
+      showToast('error', err.message || '删除失败，请重试')
     } finally {
       setDeletingStock(false)
     }
@@ -363,8 +401,61 @@ export default function Dashboard() {
     }))
   }
 
+  const selectedIds = [...selectedStockIds]
+
+  const toggleStockSelection = (stockId) => {
+    setSelectedStockIds((previous) => {
+      const next = new Set(previous)
+      if (next.has(stockId)) next.delete(stockId)
+      else next.add(stockId)
+      return next
+    })
+  }
+
+  const handleRemoveFromActiveGroup = async () => {
+    if (activeGroupId === 'all' || selectedIds.length === 0) return
+    setBulkActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/stock-groups/${activeGroupId}/stocks`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stock_ids: selectedIds }),
+      })
+      if (!response.ok) throw new Error('移出分组失败')
+      await fetchGroups()
+      setSelectedStockIds(new Set())
+      showToast('success', `已将 ${selectedIds.length} 只股票移出当前分组`)
+    } catch (err) {
+      showToast('error', err.message || '移出分组失败，请重试')
+    } finally {
+      setBulkActionLoading(false)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return
+    setBulkActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/stocks/bulk-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stock_ids: selectedIds }),
+      })
+      if (!response.ok) throw new Error('批量删除失败')
+      setShowBulkDeleteConfirm(false)
+      setSelectedStockIds(new Set())
+      await Promise.all([fetchData(), fetchGroups()])
+      showToast('success', `已删除 ${selectedIds.length} 只自选股票`)
+    } catch (err) {
+      showToast('error', err.message || '批量删除失败，请重试')
+    } finally {
+      setBulkActionLoading(false)
+    }
+  }
+
   const filteredStocks = useMemo(() => {
-    return stocks.filter((s) => {
+    const groupStocks = filterStocksByGroup(stocks, groups, activeGroupId)
+    return groupStocks.filter((s) => {
       const matchMarket = marketFilter === 'all' || s.market === marketFilter
       const term = searchTerm.toLowerCase()
       const matchSearch =
@@ -373,7 +464,7 @@ export default function Dashboard() {
         (s.name && s.name.toLowerCase().includes(term))
       return matchMarket && matchSearch
     })
-  }, [stocks, marketFilter, searchTerm])
+  }, [stocks, groups, activeGroupId, marketFilter, searchTerm])
 
   const sortedStocks = useMemo(() => {
     const sorted = [...filteredStocks]
@@ -392,6 +483,9 @@ export default function Dashboard() {
     })
     return sorted
   }, [filteredStocks, sortConfig, drawdownWindow])
+
+  const visibleStockIds = sortedStocks.map((stock) => stock.id)
+  const allVisibleSelected = visibleStockIds.length > 0 && visibleStockIds.every((id) => selectedStockIds.has(id))
 
   const stats = useMemo(() => {
     const total = stocks.length
@@ -601,6 +695,36 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
+            <div className="flex max-w-full overflow-x-auto bg-sent-border/30 rounded-lg p-0.5" role="group" aria-label="股票分组">
+              <button
+                type="button"
+                onClick={() => setActiveGroupId('all')}
+                className={`shrink-0 px-3 py-1.5 text-xs rounded-md transition-colors ${
+                  activeGroupId === 'all' ? 'bg-sent-blue text-white' : 'text-sent-dim hover:text-white'
+                }`}
+              >
+                全部股票
+              </button>
+              {groups.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => setActiveGroupId(group.id)}
+                  className={`shrink-0 px-3 py-1.5 text-xs rounded-md transition-colors ${
+                    activeGroupId === group.id ? 'bg-sent-blue text-white' : 'text-sent-dim hover:text-white'
+                  }`}
+                >
+                  {group.name} · {group.stock_count}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowGroupManager(true)}
+              className="px-3 py-1.5 text-xs bg-sent-border/50 text-sent-dim rounded-lg hover:text-white hover:bg-sent-border transition-colors"
+            >
+              🗂 管理分组
+            </button>
             <button
               onClick={() => setShowAddModal(true)}
               className="px-3 py-1.5 text-xs bg-sent-blue/20 text-sent-blue rounded-lg hover:bg-sent-blue/30 transition-colors"
@@ -703,11 +827,33 @@ export default function Dashboard() {
           />
         </div>
 
+        {selectedIds.length > 0 && (
+          <div className="px-4 py-2.5 border-b border-sent-border bg-sent-blue/5 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-sent-blue font-medium mr-1">已选 {selectedIds.length} 只</span>
+            <button type="button" onClick={() => setShowGroupAssignment(true)} disabled={bulkActionLoading} className="px-3 py-1.5 text-xs bg-sent-blue/20 text-sent-blue rounded-lg hover:bg-sent-blue/30 disabled:opacity-50">加入分组</button>
+            {activeGroupId !== 'all' && (
+              <button type="button" onClick={handleRemoveFromActiveGroup} disabled={bulkActionLoading} className="px-3 py-1.5 text-xs bg-sent-border/50 text-sent-dim rounded-lg hover:text-white disabled:opacity-50">移出当前分组</button>
+            )}
+            <button type="button" onClick={() => setShowBulkDeleteConfirm(true)} disabled={bulkActionLoading} className="px-3 py-1.5 text-xs bg-sent-red/15 text-sent-red rounded-lg hover:bg-sent-red/25 disabled:opacity-50">删除自选</button>
+            <button type="button" onClick={() => setSelectedStockIds(new Set())} disabled={bulkActionLoading} className="px-2 py-1.5 text-xs text-sent-dim hover:text-white disabled:opacity-50">取消选择</button>
+          </div>
+        )}
+
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className={`${sortedStocks.length === 0 ? 'w-full' : 'w-full min-w-[860px]'} text-sm`}>
+          <table className={`${sortedStocks.length === 0 ? 'w-full' : 'w-full min-w-[900px]'} text-sm`}>
             <thead>
               <tr className="border-b border-sent-border text-sent-dim text-xs">
+                <th className="w-10 px-3 py-2.5 text-center">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={() => setSelectedStockIds((previous) => toggleVisibleSelection(previous, visibleStockIds))}
+                    disabled={visibleStockIds.length === 0}
+                    aria-label="选择当前可见股票"
+                    className="accent-sent-blue disabled:opacity-50"
+                  />
+                </th>
                 <th className="px-3 py-2.5 text-left"><button type="button" className="cursor-pointer hover:text-white" onClick={() => handleSort('ticker')}>代码 <SortIcon column="ticker" sortConfig={sortConfig} /></button></th>
                 <th className="px-3 py-2.5 text-left"><button type="button" className="cursor-pointer hover:text-white" onClick={() => handleSort('name')}>名称 <SortIcon column="name" sortConfig={sortConfig} /></button></th>
                 <th className="px-3 py-2.5 text-left whitespace-nowrap">市场</th>
@@ -727,7 +873,7 @@ export default function Dashboard() {
             <tbody>
               {sortedStocks.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-4 py-12 text-center text-sent-dim">
+                  <td colSpan={15} className="px-4 py-12 text-center text-sent-dim">
                     {stocks.length === 0 ? (
                       <div className="space-y-3">
                         <p>还没有监控股票。添加后即可查看不同周期的回撤与固定 1 年提醒线。</p>
@@ -770,6 +916,15 @@ export default function Dashboard() {
                     key={stock.id}
                     className="border-b border-sent-border/50 hover:bg-white/[0.02] transition-colors"
                   >
+                    <td className="w-10 px-3 py-2.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedStockIds.has(stock.id)}
+                        onChange={() => toggleStockSelection(stock.id)}
+                        aria-label={`选择 ${stock.ticker}`}
+                        className="accent-sent-blue"
+                      />
+                    </td>
                     <td className="px-3 py-2.5 font-mono text-white whitespace-nowrap">{stock.ticker}</td>
                     <td className="px-3 py-2.5 text-white whitespace-nowrap">{stock.name || '--'}</td>
                     <td className="hidden xl:table-cell px-3 py-2.5 whitespace-nowrap">
@@ -881,11 +1036,29 @@ export default function Dashboard() {
           onClose={() => setShowAddModal(false)}
           onAdded={async ({ added, failed }) => {
             await fetchData()
+            await fetchGroups()
             showToast(
               failed.length ? 'error' : 'success',
               failed.length ? `已添加 ${added.length} 只，${failed.length} 只未添加` : `已添加 ${added.length} 只股票`,
             )
           }}
+        />
+      )}
+
+      {showGroupManager && (
+        <GroupManagerModal
+          groups={groups}
+          onClose={() => setShowGroupManager(false)}
+          onGroupsChanged={fetchGroups}
+        />
+      )}
+
+      {showGroupAssignment && (
+        <AssignStocksToGroupsModal
+          groups={groups}
+          stockIds={selectedIds}
+          onClose={() => setShowGroupAssignment(false)}
+          onGroupsChanged={fetchGroups}
         />
       )}
 
@@ -1113,6 +1286,25 @@ export default function Dashboard() {
               >
                 取消
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={bulkActionLoading ? undefined : () => setShowBulkDeleteConfirm(false)} />
+          <div className="relative bg-sent-card border border-sent-border rounded-xl p-6 w-full max-w-sm mx-4">
+            <h3 className="text-lg font-semibold mb-2">确认删除自选</h3>
+            <p className="text-sm text-sent-dim mb-6">
+              确定从监控平台删除已选的 <span className="text-white font-medium">{selectedIds.length}</span> 只股票吗？
+              它们也会自动从所有分组中移除，此操作不可撤销。
+            </p>
+            <div className="flex gap-3">
+              <button onClick={handleBulkDelete} disabled={bulkActionLoading} className="flex-1 px-4 py-2 bg-sent-red text-white rounded-lg hover:bg-sent-red/80 transition-colors disabled:opacity-50 text-sm">
+                {bulkActionLoading ? '删除中...' : '确认删除'}
+              </button>
+              <button onClick={() => setShowBulkDeleteConfirm(false)} disabled={bulkActionLoading} className="px-4 py-2 border border-sent-border text-sent-dim rounded-lg hover:text-white hover:border-sent-dim transition-colors text-sm">取消</button>
             </div>
           </div>
         </div>
