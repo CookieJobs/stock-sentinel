@@ -304,3 +304,11 @@ AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加�
 - 新增 `backend/test_stock_management.py`（6 个临时 SQLite API 回归测试），不访问外部行情、不读写真实 `data/sentinel.db`。
 - 验证：`python backend/test_data_fetcher.py`、`python -m pytest backend/test_*.py -q`（25 passed）、`python -m pytest backend/tests/ -q`（232 passed，1 条既有运行时 warning）、前端 lint + build 通过。
 - 与「优化首页股票监控模块」会话隔离：未修改 `frontend/src/pages/Dashboard.jsx` 或首页样式。
+
+## 2026-08-28 — 首页股票监控：可解释的多周期回撤
+
+- 回撤统一为 3 个月、6 个月和 1 年滚动日历窗口，返回区间起点、截至日、最高/最低价及日期、回撤和距低点；A/港/美股使用同一计算函数，历史覆盖不足时明确返回 `数据不足`。
+- 数据库给 `stocks` 和 `price_history` 新增 `drawdown_windows` JSON 快照；`GET /api/history/{ticker}` 支持 `window=3m|6m|1y`，旧历史记录不再伪装成新窗口趋势。既有 52 周字段固定映射到 1 年，告警、简报与历史语义保持稳定。
+- 首页新增记忆型 3 月/6 月/1 年选择器，概览、排序、表格、趋势、CSV 同步切换；用公式、区间高点日期、实际行情时刻和「数据不足」解释指标。提醒列明确固定 1 年且仅按用户自己的阈值标出「已越线/关注」，不再使用隐藏的 -10%/-20% 色阶。
+- 体验：补齐加载失败、空自选股、筛选无结果、键盘焦点和窄屏可读性（核心列保持可读并支持横向查看）。
+- 设计决策：新增 `docs/adr/0003-monitoring-drawdown-windows.md`；实施记录见 `.scratch/dashboard-monitoring/`。
