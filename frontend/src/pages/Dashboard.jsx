@@ -1,6 +1,7 @@
 // v0.2.0 历史代码：空依赖 useCallback + setState，React Compiler 严格模式不匹配
 // M6 打磨时统一重构；现在保持行为不变
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import AddStockModal from '../components/AddStockModal'
 import BriefingModal from '../components/BriefingModal'
 import Sparkline from '../components/Sparkline'
 
@@ -80,12 +81,6 @@ export default function Dashboard() {
 
   // Add stock modal
   const [showAddModal, setShowAddModal] = useState(false)
-  const [newTicker, setNewTicker] = useState('')
-  const [newName, setNewName] = useState('')
-  const [newThreshold, setNewThreshold] = useState('15')
-  const [newAlertEnabled, setNewAlertEnabled] = useState(false)
-  const [addLoading, setAddLoading] = useState(false)
-  const [addError, setAddError] = useState('')
 
   // Edit stock modal
   const [editingStock, setEditingStock] = useState(null)
@@ -242,42 +237,6 @@ export default function Dashboard() {
     } finally {
       setRefreshing(false)
       setTimeout(() => setRefreshProgress(null), 1200)
-    }
-  }
-
-  const handleAddStock = async (e) => {
-    e.preventDefault()
-    setAddError('')
-    if (!newTicker.trim()) {
-      setAddError('请输入股票代码')
-      return
-    }
-    setAddLoading(true)
-    try {
-      const res = await fetch(`${API_BASE}/stocks/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ticker: newTicker.trim().toUpperCase(),
-          name: newName.trim() || undefined,
-          threshold: Math.abs(parseFloat(newThreshold)) || 15,
-          alert_enabled: newAlertEnabled,
-        }),
-      })
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.detail || '添加失败')
-      }
-      setShowAddModal(false)
-      setNewTicker('')
-      setNewName('')
-      setNewThreshold('15')
-      setNewAlertEnabled(false)
-      await fetchData()
-    } catch (err) {
-      setAddError(err.message)
-    } finally {
-      setAddLoading(false)
     }
   }
 
@@ -782,87 +741,17 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Add Stock Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setShowAddModal(false)} />
-          <div className="relative bg-sent-card border border-sent-border rounded-xl p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-semibold mb-4">添加股票</h3>
-            <form onSubmit={handleAddStock} className="space-y-4">
-              <div>
-                <label className="block text-xs text-sent-dim mb-1">股票代码 *</label>
-                <input
-                  type="text"
-                  value={newTicker}
-                  onChange={(e) => setNewTicker(e.target.value)}
-                  placeholder="例如: AAPL, 600519.SS, 0700.HK"
-                  className="w-full bg-sent-bg border border-sent-border rounded-lg px-3 py-2 text-sm text-white placeholder-sent-dim focus:outline-none focus:border-sent-blue"
-                  autoFocus
-                />
-                <p className="text-xs text-sent-dim mt-1">
-                  美股直接输入代码，A股加.SS(上)/.SZ(深)，港股加.HK
-                </p>
-              </div>
-              <div>
-                <label className="block text-xs text-sent-dim mb-1">名称 (可选)</label>
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="如: Apple Inc."
-                  className="w-full bg-sent-bg border border-sent-border rounded-lg px-3 py-2 text-sm text-white placeholder-sent-dim focus:outline-none focus:border-sent-blue"
-                />
-              </div>
-              <div>
-                <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newAlertEnabled}
-                    onChange={(e) => setNewAlertEnabled(e.target.checked)}
-                    className="accent-sent-blue"
-                  />
-                  启用 52 周回撤风险提醒
-                </label>
-                <p className="text-xs text-sent-dim mt-1">
-                  首次越过关注线时提醒一次，明显恢复后才会重新布防。
-                </p>
-              </div>
-              <div>
-                <label className="block text-xs text-sent-dim mb-1">关注线 (%)</label>
-                <input
-                  type="number"
-                  value={newThreshold}
-                  onChange={(e) => setNewThreshold(e.target.value)}
-                  disabled={!newAlertEnabled}
-                  min="1"
-                  max="94"
-                  step="0.5"
-                  className="w-full bg-sent-bg border border-sent-border rounded-lg px-3 py-2 text-sm text-white placeholder-sent-dim focus:outline-none focus:border-sent-blue disabled:opacity-50"
-                />
-                <p className="text-xs text-sent-dim mt-1">例如 15 表示从 52 周高点回撤达到 15% 时关注。</p>
-              </div>
-              {addError && (
-                <div className="text-xs text-sent-red bg-sent-red/10 px-3 py-2 rounded-lg">{addError}</div>
-              )}
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="submit"
-                  disabled={addLoading}
-                  className="flex-1 px-4 py-2 bg-sent-blue text-white rounded-lg hover:bg-sent-blue/80 transition-colors disabled:opacity-50 text-sm"
-                >
-                  {addLoading ? '添加中...' : '确认添加'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 border border-sent-border text-sent-dim rounded-lg hover:text-white hover:border-sent-dim transition-colors text-sm"
-                >
-                  取消
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <AddStockModal
+          onClose={() => setShowAddModal(false)}
+          onAdded={async ({ added, failed }) => {
+            await fetchData()
+            showToast(
+              failed.length ? 'error' : 'success',
+              failed.length ? `已添加 ${added.length} 只，${failed.length} 只未添加` : `已添加 ${added.length} 只股票`,
+            )
+          }}
+        />
       )}
 
       {/* Daily Briefing Modal */}

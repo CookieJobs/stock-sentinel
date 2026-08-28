@@ -93,11 +93,15 @@ def test_factors_screen_empty_data(client):
     # 可能 error 或 results = []
 
 
-def test_factors_refresh(client):
-    """刷新因子库：返回插入条数"""
+def test_factors_refresh(client, monkeypatch):
+    """刷新接口返回插入条数，不依赖真实全市场数据源。"""
+    from quant_engine.api import factors as factors_api
+
+    monkeypatch.setattr(factors_api, "refresh_universe", lambda: 12)
     r = client.post("/api/quant/factors/refresh")
     assert r.status_code == 200
     data = r.json()
+    assert data["inserted"] == 12
     assert "inserted" in data
     assert "stats" in data
 
