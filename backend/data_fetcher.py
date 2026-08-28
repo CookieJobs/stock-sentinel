@@ -5,9 +5,10 @@ import hashlib
 import logging
 import random
 import time
+import threading
 import requests
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,11 @@ def _to_float(v):
 class DataFetcher:
     """统一的数据获取接口 — 支持 US / CN / HK 三市场"""
 
+    # 高频报价刷新不应重复拉取同一份日线；行情实时字段仍逐次更新。
+    _DAILY_BAR_CACHE_TTL_SECONDS = 18 * 60 * 60
+    _daily_bar_cache: Dict[str, tuple[float, list[dict]]] = {}
+    _daily_bar_cache_lock = threading.Lock()
+
     # ── 市场检测 ──────────────────────────────────────────────
 
     @staticmethod
@@ -126,6 +132,240 @@ class DataFetcher:
     def _hk_secid(ticker: str) -> str:
         """港股东方财富 secid: 116.00xxx"""
         return f"116.{ticker.zfill(5)}"
+
+    @staticmethod
+    def calculate_drawdown_windows(
+        current_price: float,
+        daily_bars: list[dict],
+        as_of: Optional[datetime] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """按统一的日线口径计算 3 月、6 月和 1 年回撤。
+
+        每个周期均以日历月前的同日为起点，范围包含起止两日；高点和低点
+        来自该周期内的日线，实时价格若突破日线范围则计入当日高低点。
+        """
+        try:
+            current = float(current_price)
+        except (TypeError, ValueError):
+            return {
+                window: {"status": "unavailable"}
+                for window in ("3m", "6m", "1y")
+            }
+
+        as_of_date = (as_of or datetime.now()).date()
+        parsed_bars = []
+        for bar in daily_bars or []:
+            try:
+                trade_date = datetime.fromisoformat(str(bar["trade_date"])[:10]).date()
+                high = float(bar["high"])
+                low = float(bar["low"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if high <= 0 or low <= 0:
+                continue
+            parsed_bars.append((trade_date, high, low))
+
+        parsed_bars.sort(key=lambda bar: bar[0])
+        windows = {}
+        for name, months in (("3m", 3), ("6m", 6), ("1y", 12)):
+            period_start = DataFetcher._subtract_months(as_of_date, months)
+            bars_in_window = [bar for bar in parsed_bars if period_start <= bar[0] <= as_of_date]
+            # 周末和节假日没有日线，允许起点后最多 3 个自然日的首个交易日。
+            if not bars_in_window or parsed_bars[0][0] > period_start + timedelta(days=3):
+                windows[name] = {
+                    "status": "insufficient_history",
+                    "period_start": period_start.isoformat(),
+                    "as_of": as_of_date.isoformat(),
+                }
+                continue
+
+            high_date, high, low_date, low = DataFetcher._window_extremes(bars_in_window)
+            if current > high:
+                high, high_date = current, as_of_date
+            if current < low:
+                low, low_date = current, as_of_date
+            windows[name] = {
+                "status": "ok",
+                "period_start": period_start.isoformat(),
+                "as_of": as_of_date.isoformat(),
+                "high": high,
+                "high_date": high_date.isoformat(),
+                "low": low,
+                "low_date": low_date.isoformat(),
+                "drawdown": round((current - high) / high * 100, 2),
+                "distance_low_pct": round((current - low) / low * 100, 2),
+            }
+        return windows
+
+    @staticmethod
+    def _subtract_months(value: date, months: int) -> date:
+        """返回 value 往前 months 个自然月的同日（月底按当月最后一天处理）。"""
+        year = value.year
+        month = value.month - months
+        while month <= 0:
+            year -= 1
+            month += 12
+        import calendar
+
+        return date(year, month, min(value.day, calendar.monthrange(year, month)[1]))
+
+    @staticmethod
+    def _window_extremes(daily_bars: list[tuple[date, float, float]]):
+        """以出现日期最早的同值点作为高低点日期，结果保持确定性。"""
+        high_date, high, _ = max(daily_bars, key=lambda bar: bar[1])
+        low_date, _, low = min(daily_bars, key=lambda bar: bar[2])
+        return high_date, high, low_date, low
+
+    @staticmethod
+    def _legacy_metrics_from_windows(windows: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """兼容既有告警和存量接口：旧 52 周字段始终映射为固定的 1 年周期。"""
+        one_year = (windows or {}).get("1y") or {}
+        if one_year.get("status") != "ok":
+            return {
+                "week52_high": None,
+                "week52_low": None,
+                "week52_high_date": None,
+                "week52_low_date": None,
+                "drawdown": None,
+                "distance_low_pct": None,
+            }
+        return {
+            "week52_high": one_year["high"],
+            "week52_low": one_year["low"],
+            "week52_high_date": one_year["high_date"],
+            "week52_low_date": one_year["low_date"],
+            "drawdown": one_year["drawdown"],
+            "distance_low_pct": one_year["distance_low_pct"],
+        }
+
+    @staticmethod
+    def _daily_bars_from_eastmoney(klines: list[str]) -> list[dict]:
+        """将东财日 K 线标准化为回撤计算使用的最小字段。"""
+        bars = []
+        for line in klines or []:
+            parts = line.split(",")
+            if len(parts) < 5:
+                continue
+            try:
+                bars.append({
+                    "trade_date": parts[0],
+                    "high": float(parts[3]),
+                    "low": float(parts[4]),
+                })
+            except (TypeError, ValueError):
+                continue
+        return bars
+
+    @staticmethod
+    def _daily_bars_from_yahoo(result: Dict[str, Any]) -> list[dict]:
+        """将 Yahoo chart 响应标准化为回撤计算使用的最小字段。"""
+        timestamps = result.get("timestamp") or []
+        quotes = (result.get("indicators") or {}).get("quote") or [{}]
+        quote = quotes[0] if quotes else {}
+        highs = quote.get("high") or []
+        lows = quote.get("low") or []
+        bars = []
+        for timestamp, high, low in zip(timestamps, highs, lows):
+            if high is None or low is None:
+                continue
+            try:
+                bars.append({
+                    "trade_date": datetime.fromtimestamp(timestamp, tz=timezone.utc).date().isoformat(),
+                    "high": float(high),
+                    "low": float(low),
+                })
+            except (OSError, TypeError, ValueError):
+                continue
+        return bars
+
+    @staticmethod
+    def _cached_daily_bars(cache_key: str, loader) -> list[dict]:
+        """在日线有效期内复用历史数据，失败结果不缓存以便下一次刷新重试。"""
+        now = time.monotonic()
+        with DataFetcher._daily_bar_cache_lock:
+            cached = DataFetcher._daily_bar_cache.get(cache_key)
+            if cached and now - cached[0] < DataFetcher._DAILY_BAR_CACHE_TTL_SECONDS:
+                return cached[1]
+
+        bars = loader()
+        if bars:
+            with DataFetcher._daily_bar_cache_lock:
+                DataFetcher._daily_bar_cache[cache_key] = (now, bars)
+        return bars
+
+    @staticmethod
+    def _get_finnhub_daily_bars(ticker: str, api_key: str) -> list[dict]:
+        """读取覆盖 1 年窗口所需的 Finnhub 日线；日内复用已有缓存。"""
+        return DataFetcher._cached_daily_bars(
+            f"finnhub:{ticker}",
+            lambda: DataFetcher._fetch_finnhub_daily_bars(ticker, api_key),
+        )
+
+    @staticmethod
+    def _fetch_finnhub_daily_bars(ticker: str, api_key: str) -> list[dict]:
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=400)
+        try:
+            resp = _SESSION.get(
+                f"{FINNHUB_BASE_URL}/stock/candle",
+                params={
+                    "symbol": ticker,
+                    "resolution": "D",
+                    "from": int(start.timestamp()),
+                    "to": int(end.timestamp()),
+                    "token": api_key,
+                },
+                timeout=12,
+            )
+            if resp.status_code != 200:
+                return []
+            payload = resp.json()
+            if payload.get("s") != "ok":
+                return []
+            return [
+                {"trade_date": datetime.fromtimestamp(timestamp, tz=timezone.utc).date().isoformat(),
+                 "high": high, "low": low}
+                for timestamp, high, low in zip(
+                    payload.get("t") or [], payload.get("h") or [], payload.get("l") or []
+                )
+                if high is not None and low is not None
+            ]
+        except Exception:
+            logger.debug("Finnhub /stock/candle failed for %s", ticker, exc_info=True)
+            return []
+
+    @staticmethod
+    def _get_eastmoney_daily_bars(secid: str) -> list[dict]:
+        """读取东财日 K 线，覆盖 1 年窗口及首尾交易日余量。"""
+        return DataFetcher._cached_daily_bars(
+            f"eastmoney:{secid}",
+            lambda: DataFetcher._fetch_eastmoney_daily_bars(secid),
+        )
+
+    @staticmethod
+    def _fetch_eastmoney_daily_bars(secid: str) -> list[dict]:
+        try:
+            response = _em_get(
+                EASTMONEY_KLINE_HOST,
+                EASTMONEY_KLINE_PATH,
+                {
+                    "secid": secid,
+                    "fields1": "f1,f2,f3,f4,f5,f6",
+                    "fields2": "f51,f52,f53,f54,f55,f56,f57",
+                    "klt": "101",
+                    "fqt": "1",
+                    "end": "20500101",
+                    "lmt": "400",
+                },
+                15,
+            )
+            if not response or response.status_code != 200:
+                return []
+            data = response.json().get("data") or {}
+            return DataFetcher._daily_bars_from_eastmoney(data.get("klines") or [])
+        except Exception:
+            logger.debug("EastMoney K-line failed for %s", secid, exc_info=True)
+            return []
 
     # ── 入口方法 ──────────────────────────────────────────────
 
@@ -204,11 +444,11 @@ class DataFetcher:
 
     @staticmethod
     def _get_yahoo_quote(ticker: str) -> Optional[Dict[str, Any]]:
-        """Yahoo Finance 美股行情（chart API，1 年日线）；作为 Finnhub 的降级源"""
+        """Yahoo Finance 美股行情（18 个月日线）；作为 Finnhub 的降级源。"""
         try:
             resp = _SESSION.get(
                 f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}",
-                params={"range": "1y", "interval": "1d"},
+                params={"range": "18mo", "interval": "1d"},
                 timeout=12,
                 headers={"User-Agent": "Mozilla/5.0"},
             )
@@ -221,30 +461,12 @@ class DataFetcher:
                 return None
             prev_close = meta.get("chartPreviousClose") or current
             change_pct = round((current - prev_close) / prev_close * 100, 2) if prev_close else None
-            week52_high = meta.get("fiftyTwoWeekHigh")
-            week52_low = meta.get("fiftyTwoWeekLow")
-
-            # 52 周高低点日期：从日线数组 argmax/argmin 反查（容忍浮点误差）
-            h_date = l_date = None
-            ts = result.get("timestamp") or []
-            quote = (result.get("indicators") or {}).get("quote") or [{}]
-            q = quote[0] if quote else {}
-            highs = q.get("high") or []
-            lows = q.get("low") or []
-            if week52_high and highs:
-                i_high = max((i for i, v in enumerate(highs) if v is not None),
-                             key=lambda i: highs[i], default=None)
-                if i_high is not None and i_high < len(ts):
-                    h_date = datetime.fromtimestamp(ts[i_high]).strftime("%Y-%m-%d")
-            if week52_low and lows:
-                i_low = min((i for i, v in enumerate(lows) if v is not None),
-                            key=lambda i: lows[i], default=None)
-                if i_low is not None and i_low < len(ts):
-                    l_date = datetime.fromtimestamp(ts[i_low]).strftime("%Y-%m-%d")
-
-            drawdown = DataFetcher.calculate_drawdown(current, week52_high)
-            distance_low_pct = DataFetcher._calc_distance_low(current, week52_low)
             now = datetime.now()
+            drawdown_windows = DataFetcher.calculate_drawdown_windows(
+                current, DataFetcher._daily_bars_from_yahoo(result), now
+            )
+            legacy = DataFetcher._legacy_metrics_from_windows(drawdown_windows)
+            drawdown = legacy["drawdown"]
             return {
                 "ticker": ticker,
                 "name": meta.get("longName") or ticker,
@@ -252,12 +474,9 @@ class DataFetcher:
                 "source": "yahoo",
                 "current_price": current,
                 "change_pct": change_pct,
-                "week52_high": week52_high,
-                "week52_low": week52_low,
-                "week52_high_date": h_date,
-                "week52_low_date": l_date,
+                **legacy,
+                "drawdown_windows": drawdown_windows,
                 "drawdown": drawdown,
-                "distance_low_pct": distance_low_pct,
                 "pe_ratio": None,
                 "market_status": DataFetcher.get_market_status(drawdown),
                 "last_updated": now.isoformat(),
@@ -293,11 +512,7 @@ class DataFetcher:
                 return None
             change_pct = q.get("dp")
 
-            # 2. 全部指标（52周高低点 + PE，一次调用替代原来的两次 metric 请求）
-            week52_high = None
-            week52_low = None
-            week52_high_date = None
-            week52_low_date = None
+            # 2. 全部指标（PE 等基本面指标）
             pe_ratio = None
             try:
                 resp2 = _SESSION.get(
@@ -307,10 +522,6 @@ class DataFetcher:
                 )
                 if resp2.status_code == 200:
                     m = resp2.json().get("metric", {}) or {}
-                    week52_high = m.get("52WeekHigh")
-                    week52_low = m.get("52WeekLow")
-                    week52_high_date = m.get("52WeekHighDate")
-                    week52_low_date = m.get("52WeekLowDate")
                     pe_ratio = m.get("peBasicExclExtraTTM") or m.get("peTTM")
             except Exception:
                 logger.debug("Finnhub /stock/metric failed for %s", ticker, exc_info=True)
@@ -331,10 +542,12 @@ class DataFetcher:
             except Exception:
                 logger.debug("Finnhub /stock/profile2 failed for %s", ticker, exc_info=True)
 
-            # 组装
-            distance_low_pct = DataFetcher._calc_distance_low(current, week52_low)
-            drawdown = DataFetcher.calculate_drawdown(current, week52_high)
             now = datetime.now()
+            drawdown_windows = DataFetcher.calculate_drawdown_windows(
+                current, DataFetcher._get_finnhub_daily_bars(ticker, api_key), now
+            )
+            legacy = DataFetcher._legacy_metrics_from_windows(drawdown_windows)
+            drawdown = legacy["drawdown"]
 
             ts_local = q.get("t", 0)
             ah_change_pct, ah_change_label = DataFetcher._calc_ah_change(current, q.get("pc"), ts_local)
