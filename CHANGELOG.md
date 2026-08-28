@@ -8,6 +8,14 @@
 - 将 SVG favicon 简化为原生 📈 emoji，替换此前的自绘折线图标；Vite 构建产物已同步到 `backend/static/`。
 - 验证：`python backend/test_data_fetcher.py`、`python -m pytest backend/tests/ -q`（232 passed）、前端 lint + build 通过。
 
+## 2026-08-27 — 回测新手引导：名称选股 + 渐进式高级设置
+
+- **新手流程**（`.scratch/backtest-beginner-experience/`）：`/backtest` 改为“选择回测方式 → 选择股票 → 选择区间”的三步界面。默认提供「跟随趋势」（单股，MA5/MA20）和「等权持有」（至少两只股票，按月调仓），提交前以中文摘要说明本次回测。
+- **名称选股**：复用 `/api/quant/search`，支持中文名、拼音和代码联想，选中后显示名称、代码和市场标签，可移除；服务无候选时，直接输入有效代码并按 Enter 仍可添加。一次回测限制同一市场，避免后端单个 `market` 参数造成误导。
+- **专业能力保留**：策略、参数、资金、基准、调仓频率、手续费和滑点移入“高级设置”；策略模板保留为可展开的现成方案，回测 API 与引擎语义未变。
+- **测试与验证**：新增 `backtest-flow.test.js` 5/5（模式映射、去重、组合数量、市场校验、payload）；`test_search.py` 25/25、`test_data_fetcher.py` 全过；前端 lint + build 通过；浏览器实测“茅台”联想→贵州茅台、组合提示、`000858` 代码回车添加和高级设置。
+- **最终全量回归**：在具有用户目录写权限的运行环境复跑 `pytest backend/tests/ -q`，**232 passed**；仅保留既有的 `test_zero_initial_capital` 除零警告。此前 3 个 `test_factor_source` 失败确认只是受限环境禁止 Tushare 写入 `/Users/liujin/tk.csv`，无需修改业务或测试逻辑。
+
 ## 2026-08-26 — 风险关注提醒：一次越线、恢复后重置
 
 - **语义统一**：回撤提醒改为显式开关 + 正数「关注线」，新增股票默认关闭；旧库的负数阈值平滑迁移为开启并取绝对值，零阈值仍关闭，历史记录不删除。
