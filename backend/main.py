@@ -18,14 +18,23 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from database import init_db
-from models import StockResponse, AddStockRequest, UpdateStockRequest
+from models import (
+    StockResponse,
+    AddStockRequest,
+    UpdateStockRequest,
+    StockGroupNameRequest,
+    StockGroupResponse,
+    StockIdBatchRequest,
+)
 from monitor import StockMonitor
+from stock_groups import StockGroupService
 from alerter import StockAlerter
 from briefing import BriefingScheduler, list_briefings, get_latest_briefing, get_briefing
 from quant_engine.db import init_quant_db
 from quant_engine.api import api_router
 
 monitor = StockMonitor()
+stock_groups = StockGroupService()
 alerter = StockAlerter()
 briefing_scheduler = BriefingScheduler()
 
@@ -115,6 +124,70 @@ def delete_stock(ticker: str):
     if not ok:
         raise HTTPException(status_code=404, detail="股票未找到")
     return {"detail": "已删除"}
+
+
+@app.post("/api/stocks/bulk-delete")
+def bulk_delete_stocks(req: StockIdBatchRequest):
+    """从整个监控列表删除选中股票，并清理其全部分组归属。"""
+    try:
+        deleted_ids = monitor.delete_stocks_by_ids(req.stock_ids)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"deleted_stock_ids": deleted_ids, "deleted_count": len(deleted_ids)}
+
+
+# ── Stock Group API ─────────────────────────────────────────
+
+@app.get("/api/stock-groups/", response_model=list[StockGroupResponse])
+def get_stock_groups():
+    """获取全部自选分组及其成员数量。"""
+    return stock_groups.list_groups()
+
+
+@app.post("/api/stock-groups/", response_model=StockGroupResponse, status_code=201)
+def create_stock_group(req: StockGroupNameRequest):
+    """创建一个自定义股票分组。"""
+    try:
+        return stock_groups.create_group(req.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.put("/api/stock-groups/{group_id}", response_model=StockGroupResponse)
+def rename_stock_group(group_id: int, req: StockGroupNameRequest):
+    """重命名分组。"""
+    try:
+        return stock_groups.rename_group(group_id, req.name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.post("/api/stock-groups/{group_id}/stocks", response_model=StockGroupResponse)
+def add_stocks_to_group(group_id: int, req: StockIdBatchRequest):
+    """将多只股票加入分组，已有归属不重复创建。"""
+    try:
+        return stock_groups.add_stocks(group_id, req.stock_ids)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.delete("/api/stock-groups/{group_id}/stocks", response_model=StockGroupResponse)
+def remove_stocks_from_group(group_id: int, req: StockIdBatchRequest):
+    """只将股票移出当前分组。"""
+    try:
+        return stock_groups.remove_stocks(group_id, req.stock_ids)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.delete("/api/stock-groups/{group_id}")
+def delete_stock_group(group_id: int):
+    """删除分组，不删除其中的股票。"""
+    if not stock_groups.delete_group(group_id):
+        raise HTTPException(status_code=404, detail="分组未找到")
+    return {"detail": "分组已删除"}
 
 
 @app.post("/api/stocks/refresh")

@@ -298,6 +298,31 @@ class StockMonitor:
         finally:
             db.close()
 
+    def delete_stocks_by_ids(self, stock_ids: List[int]) -> list[int]:
+        """事务性删除多只监控股票，并由外键清理全部分组归属。"""
+        unique_ids = list(dict.fromkeys(stock_ids))
+        db = get_db()
+        try:
+            placeholders = ", ".join("?" for _ in unique_ids)
+            rows = db.execute(
+                f"SELECT id, ticker FROM stocks WHERE id IN ({placeholders})", unique_ids
+            ).fetchall()
+            existing_by_id = {row["id"]: row["ticker"] for row in rows}
+            missing_ids = [stock_id for stock_id in unique_ids if stock_id not in existing_by_id]
+            if missing_ids:
+                raise KeyError(f"股票未找到: {', '.join(str(value) for value in missing_ids)}")
+
+            tickers = [existing_by_id[stock_id] for stock_id in unique_ids]
+            with db:
+                db.execute(f"DELETE FROM stocks WHERE id IN ({placeholders})", unique_ids)
+                ticker_placeholders = ", ".join("?" for _ in tickers)
+                db.execute(
+                    f"DELETE FROM alert_state WHERE ticker IN ({ticker_placeholders})", tickers
+                )
+            return unique_ids
+        finally:
+            db.close()
+
     def _fetch_one_stock(self, ticker: str) -> Optional[Dict[str, Any]]:
         """获取单只股票的实时数据并更新数据库"""
         data = DataFetcher.get_stock_info(ticker, self.api_key)
