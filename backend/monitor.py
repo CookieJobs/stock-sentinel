@@ -6,12 +6,18 @@ import uuid
 import threading
 import sqlite3
 import time
+import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlencode
 
 from database import get_db
 from models import StockResponse
 from data_fetcher import DataFetcher
+import logo_service
+
+
+logger = logging.getLogger(__name__)
 
 
 class StockMonitor:
@@ -74,6 +80,14 @@ class StockMonitor:
         """将数据库行转换为 StockResponse"""
         if row is None:
             return None
+        logo_updated_at = row["logo_updated_at"] if "logo_updated_at" in row.keys() else None
+        logo_url = None
+        if logo_updated_at:
+            logo_url = "/api/stock-logos?" + urlencode({
+                "market": row["market"] or "US",
+                "ticker": row["ticker"],
+                "v": logo_updated_at,
+            })
         return StockResponse(
             id=row["id"],
             ticker=row["ticker"],
@@ -99,7 +113,30 @@ class StockMonitor:
             market_status=row["market_status"] or "未知",
             last_updated=row["last_updated"],
             created_at=row["created_at"],
+            logo_url=logo_url,
         )
+
+    @staticmethod
+    def _stock_select() -> str:
+        """返回带 Logo 缓存元数据的股票查询，避免把 Blob 读入列表响应。"""
+        return """
+            SELECT stocks.*, stock_logos.updated_at AS logo_updated_at
+            FROM stocks
+            LEFT JOIN stock_logos
+              ON stock_logos.market = stocks.market AND stock_logos.ticker = stocks.ticker
+        """
+
+    @staticmethod
+    def _cache_provider_logo(data: Optional[Dict[str, Any]]) -> None:
+        """Logo 下载失败只降级视觉表现，绝不能影响行情刷新。"""
+        if not data or data.get("market") != "US" or not data.get("logo_url"):
+            return
+        try:
+            logo_service.cache_finnhub_logo(
+                data.get("market", "US"), data.get("ticker", ""), data.get("logo_url")
+            )
+        except Exception:
+            logger.debug("Finnhub logo cache failed for %s", data.get("ticker"), exc_info=True)
 
     @staticmethod
     def _decode_drawdown_windows(raw: Optional[str]) -> Optional[Dict[str, Dict[str, Any]]]:
@@ -123,7 +160,7 @@ class StockMonitor:
         """获取所有监控股票"""
         db = get_db()
         try:
-            rows = db.execute("SELECT * FROM stocks ORDER BY id").fetchall()
+            rows = db.execute(self._stock_select() + " ORDER BY stocks.id").fetchall()
             return [self._row_to_response(r) for r in rows]
         finally:
             db.close()
@@ -132,7 +169,9 @@ class StockMonitor:
         """根据 ticker 获取单只股票"""
         db = get_db()
         try:
-            row = db.execute("SELECT * FROM stocks WHERE ticker = ?", (ticker.upper(),)).fetchone()
+            row = db.execute(
+                self._stock_select() + " WHERE stocks.ticker = ?", (ticker.upper(),)
+            ).fetchone()
             return self._row_to_response(row) if row else None
         finally:
             db.close()
@@ -220,31 +259,11 @@ class StockMonitor:
             )
             db.commit()
 
-            return StockResponse(
-                id=cursor.lastrowid,
-                ticker=ticker,
-                name=stock_name,
-                market=market,
-                threshold=threshold,
-                alert_enabled=alert_enabled,
-                current_price=current_price,
-                change_pct=change_pct,
-                ah_change_pct=ah_change_pct,
-                ah_change_label=ah_change_label,
-                sector=sector,
-                week52_high=week52_high,
-                week52_low=week52_low,
-                week52_high_date=week52_high_date,
-                week52_low_date=week52_low_date,
-                drawdown=drawdown,
-                drawdown_windows=drawdown_windows,
-                distance_low_pct=distance_low_pct,
-                pe_ratio=pe_ratio,
-                market_status=market_status,
-                last_updated=last_updated,
-            )
         finally:
             db.close()
+
+        self._cache_provider_logo(data)
+        return self.get_stock_by_ticker(ticker)
 
     def update_stock(self, ticker: str, **kwargs) -> Optional[StockResponse]:
         """更新股票设置"""
@@ -273,7 +292,9 @@ class StockMonitor:
                     db.execute("DELETE FROM alert_state WHERE ticker = ?", (ticker,))
                 db.commit()
 
-            row = db.execute("SELECT * FROM stocks WHERE ticker = ?", (ticker,)).fetchone()
+            row = db.execute(
+                self._stock_select() + " WHERE stocks.ticker = ?", (ticker,)
+            ).fetchone()
             return self._row_to_response(row) if row else None
         finally:
             db.close()
@@ -287,14 +308,21 @@ class StockMonitor:
         return round(value, 2)
 
     def delete_stock(self, ticker: str) -> bool:
-        """删除股票"""
+        """删除股票及其本地 Logo 缓存。"""
         ticker = ticker.strip().upper()
         db = get_db()
         try:
-            cursor = db.execute("DELETE FROM stocks WHERE ticker = ?", (ticker,))
-            db.execute("DELETE FROM alert_state WHERE ticker = ?", (ticker,))
-            db.commit()
-            return cursor.rowcount > 0
+            row = db.execute("SELECT market FROM stocks WHERE ticker = ?", (ticker,)).fetchone()
+            if not row:
+                return False
+            with db:
+                db.execute("DELETE FROM stocks WHERE ticker = ?", (ticker,))
+                db.execute("DELETE FROM alert_state WHERE ticker = ?", (ticker,))
+                db.execute(
+                    "DELETE FROM stock_logos WHERE market = ? AND ticker = ?",
+                    (row["market"], ticker),
+                )
+            return True
         finally:
             db.close()
 
@@ -305,20 +333,25 @@ class StockMonitor:
         try:
             placeholders = ", ".join("?" for _ in unique_ids)
             rows = db.execute(
-                f"SELECT id, ticker FROM stocks WHERE id IN ({placeholders})", unique_ids
+                f"SELECT id, ticker, market FROM stocks WHERE id IN ({placeholders})", unique_ids
             ).fetchall()
-            existing_by_id = {row["id"]: row["ticker"] for row in rows}
+            existing_by_id = {row["id"]: row for row in rows}
             missing_ids = [stock_id for stock_id in unique_ids if stock_id not in existing_by_id]
             if missing_ids:
                 raise KeyError(f"股票未找到: {', '.join(str(value) for value in missing_ids)}")
 
-            tickers = [existing_by_id[stock_id] for stock_id in unique_ids]
+            tickers = [existing_by_id[stock_id]["ticker"] for stock_id in unique_ids]
             with db:
                 db.execute(f"DELETE FROM stocks WHERE id IN ({placeholders})", unique_ids)
                 ticker_placeholders = ", ".join("?" for _ in tickers)
                 db.execute(
                     f"DELETE FROM alert_state WHERE ticker IN ({ticker_placeholders})", tickers
                 )
+                for row in rows:
+                    db.execute(
+                        "DELETE FROM stock_logos WHERE market = ? AND ticker = ?",
+                        (row["market"], row["ticker"]),
+                    )
             return unique_ids
         finally:
             db.close()
@@ -361,9 +394,10 @@ class StockMonitor:
             )
             db.commit()
             self._record_price_point(data)
-            return data
         finally:
             db.close()
+        self._cache_provider_logo(data)
+        return data
 
     def refresh_all(self) -> List[StockResponse]:
         """刷新所有股票数据（同步，保留向后兼容）"""

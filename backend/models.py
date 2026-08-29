@@ -26,6 +26,7 @@ class StockResponse(BaseModel):
     market_status: Optional[str] = "未知"
     last_updated: Optional[str] = None
     created_at: Optional[str] = None
+    logo_url: Optional[str] = None
 
 
 class AddStockRequest(BaseModel):
@@ -50,6 +51,12 @@ class UpdateStockRequest(BaseModel):
     distance_low_pct: Optional[float] = None
     pe_ratio: Optional[float] = None
     market_status: Optional[str] = None
+
+
+class StockLogoUploadRequest(BaseModel):
+    ticker: str = Field(min_length=1, max_length=32)
+    market: str = Field(pattern="^(CN|HK|US)$")
+    data_url: str = Field(min_length=16, max_length=700000)
 
 
 class StockGroupNameRequest(BaseModel):
