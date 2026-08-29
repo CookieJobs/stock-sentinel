@@ -11,7 +11,7 @@ for _key in ("NO_PROXY", "no_proxy"):
     _suffix = ",push2.eastmoney.com,push2his.eastmoney.com,finnhub.io"
     os.environ[_key] = (_existing + _suffix) if _existing else "push2.eastmoney.com,push2his.eastmoney.com,finnhub.io"
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,7 +22,6 @@ from models import (
     StockResponse,
     AddStockRequest,
     UpdateStockRequest,
-    StockLogoUploadRequest,
     StockGroupNameRequest,
     StockGroupResponse,
     StockIdBatchRequest,
@@ -33,7 +32,6 @@ from alerter import StockAlerter
 from briefing import BriefingScheduler, list_briefings, get_latest_briefing, get_briefing
 from quant_engine.db import init_quant_db
 from quant_engine.api import api_router
-import logo_service
 
 monitor = StockMonitor()
 stock_groups = StockGroupService()
@@ -71,55 +69,6 @@ app.add_middleware(
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "StockSentinel"}
-
-
-# ── Stock Logo API ──────────────────────────────────────────
-
-@app.get("/api/stock-logos")
-def get_stock_logo(
-    ticker: str = Query(..., min_length=1, max_length=32),
-    market: str = Query(..., pattern="^(CN|HK|US)$"),
-):
-    """返回本站缓存的股票 Logo；不向浏览器暴露第三方图片 URL。"""
-    logo = logo_service.get_logo(market, ticker)
-    if not logo:
-        raise HTTPException(status_code=404, detail="股票 Logo 未找到")
-    return Response(
-        content=logo["content"],
-        media_type=logo["content_type"],
-        headers={"Cache-Control": "private, max-age=3600"},
-    )
-
-
-@app.put("/api/stock-logos", status_code=204)
-def upload_stock_logo(req: StockLogoUploadRequest):
-    """保存用户选择的本地 PNG/JPEG/WebP Logo。"""
-    stock = monitor.get_stock_by_ticker(req.ticker.upper())
-    if not stock:
-        raise HTTPException(status_code=404, detail="股票未找到")
-    if stock.market != req.market:
-        raise HTTPException(status_code=422, detail="Logo 市场必须与监控股票一致")
-    try:
-        content, content_type = logo_service.parse_logo_data_url(req.data_url)
-        logo_service.save_logo(req.market, req.ticker, content, content_type, "manual")
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    return Response(status_code=204)
-
-
-@app.delete("/api/stock-logos", status_code=204)
-def delete_stock_logo(
-    ticker: str = Query(..., min_length=1, max_length=32),
-    market: str = Query(..., pattern="^(CN|HK|US)$"),
-):
-    """清除本站缓存，前端随后使用文字占位。"""
-    stock = monitor.get_stock_by_ticker(ticker.upper())
-    if not stock:
-        raise HTTPException(status_code=404, detail="股票未找到")
-    if stock.market != market:
-        raise HTTPException(status_code=422, detail="Logo 市场必须与监控股票一致")
-    logo_service.delete_logo(market, ticker)
-    return Response(status_code=204)
 
 
 # ── Stock API ───────────────────────────────────────────────

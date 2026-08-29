@@ -56,20 +56,6 @@ def init_db():
         )
     """)
 
-    # 股票品牌 Logo：图片本体只供本地 API 返回，避免前端直接热链第三方资源。
-    # 市场与代码共同构成身份，防止跨市场同码错误复用图片。
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS stock_logos (
-            market TEXT NOT NULL,
-            ticker TEXT NOT NULL,
-            content BLOB NOT NULL,
-            content_type TEXT NOT NULL,
-            source TEXT NOT NULL,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            PRIMARY KEY (market, ticker)
-        )
-    """)
-
     # 自选分组：分组本身与股票归属分开保存，一只股票可出现在多个分组。
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS stock_groups (

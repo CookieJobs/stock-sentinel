@@ -529,7 +529,6 @@ class DataFetcher:
             # 3. 公司名称 + 行业（一次 profile2 调用同时获取）
             name = ticker
             sector = None
-            logo_url = None
             try:
                 resp3 = _SESSION.get(
                     f"{FINNHUB_BASE_URL}/stock/profile2",
@@ -540,7 +539,6 @@ class DataFetcher:
                     p = resp3.json()
                     name = p.get("name") or ticker
                     sector = p.get("finnhubIndustry")
-                    logo_url = p.get("logo")
             except Exception:
                 logger.debug("Finnhub /stock/profile2 failed for %s", ticker, exc_info=True)
 
@@ -559,7 +557,6 @@ class DataFetcher:
                 "name": name,
                 "market": "US",
                 "source": "finnhub",
-                "logo_url": logo_url,
                 "current_price": current,
                 "change_pct": change_pct,
                 "ah_change_pct": ah_change_pct,
