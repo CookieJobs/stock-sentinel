@@ -1,6 +1,6 @@
 # StockSentinel AI 治理与项目宪法设计
 
-Status: ready-for-human
+Status: approved
 
 Date: 2026-08-31
 
