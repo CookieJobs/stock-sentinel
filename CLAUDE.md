@@ -33,25 +33,12 @@ cd frontend && npm install && npm run dev  # → http://localhost:5173
 ./start.sh  # 同时启动前后端，访问 http://localhost:5173
 ```
 
-## Commands
+## Engineering commands
 
-```bash
-# Backend
-python backend/main.py                  # Start API server on :8000
-python -m pytest backend/tests/         # Run all backend tests (137+ tests)
-python backend/test_data_fetcher.py     # Run data fetcher smoke tests
-
-# Frontend
-cd frontend && npm run dev              # Dev server on :5173, proxies /api → :8000
-cd frontend && npm run build            # Build into backend/static/ for production
-cd frontend && npm run lint             # ESLint
-cd frontend && npm test                 # Vitest (if configured)
-
-# 全栈
-./start.sh                              # 同时启动前后端 → 访问 http://localhost:5173
-```
-
-开发时只访问 `http://localhost:5173`（Vite proxy 转发 `/api` 到 :8000）。
+开发、测试、构建、Git 与提交前完整质量门的当前命令和政策，仅以
+[`docs/agents/engineering-playbook.md`](docs/agents/engineering-playbook.md) 为准。本文件只维护架构与
+API 参考；本地启动方式见上方 Quick start，开发时访问 `http://localhost:5173`（Vite proxy 转发
+`/api` 到 `:8000`）。
 
 ## Architecture
 
@@ -95,13 +82,13 @@ backend/
 │       ├── risk.py
 │       └── metrics.py
 └── tests/
-    └── quant_engine/        # ⭐ 137 个后端测试
-        ├── test_indicators.py   # 27 tests
-        ├── test_factors.py      # 17 tests
-        ├── test_risk.py         # 17 tests
-        ├── test_backtest.py     # 23 tests
-        ├── test_portfolio.py    # 24 tests
-        └── test_api.py          # 29 tests (集成测试)
+    └── quant_engine/        # ⭐ 量化引擎测试
+        ├── test_indicators.py
+        ├── test_factors.py
+        ├── test_risk.py
+        ├── test_backtest.py
+        ├── test_portfolio.py
+        └── test_api.py          # API 集成测试
 ```
 
 **v0.2.0 模块说明**（量化分层之上的原始功能）：
@@ -237,13 +224,8 @@ frontend/src/
 
 ## Testing
 
-```bash
-# Backend（137+ tests）
-.venv/bin/python -m pytest backend/tests/ -v
-
-# Frontend（lint + build）
-cd frontend && npm run lint && npm run build
-```
+测试规范、当前命令和提交前完整质量门以
+[`docs/agents/engineering-playbook.md`](docs/agents/engineering-playbook.md) 为唯一执行来源。
 
 **测试覆盖**：
 - `test_indicators.py` — 13 个指标 + 边界

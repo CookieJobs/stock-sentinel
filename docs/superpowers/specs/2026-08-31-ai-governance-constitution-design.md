@@ -147,13 +147,17 @@ StockSentinel 已经采用“AI 主导执行、人负责方向与把关”的维
 
 ## 文件变更范围
 
-正式实施阶段只修改或新增以下治理文件：
+初始实施阶段只修改或新增以下治理文件：
 
 - 新增 `CONSTITUTION.md`。
 - 重写根目录 `AGENTS.md`，保留入口、工作循环、安全边界和文档地图。
 - 新增 `docs/agents/engineering-playbook.md`，承接现有详细工程规范。
 - 更新 `CONTEXT.md` 的文档地图和接手顺序。
 - 更新 `CHANGELOG.md`，记录治理结构、验证结果和未决事项。
+
+最终审查为满足“工程手册单一执行来源”和“导航不失效”两项核心验收，批准最小 docs-only
+扩展：清理受影响的 `CLAUDE.md`、`docs/agents/domain.md`、两个当前 daily-briefing issue、
+实施计划及既有治理文档中的冲突或失效引用。该扩展不改变产品行为，也不建立新的工程政策来源。
 
 不修改 `.scratch/stock-logos/`、前后端源代码、静态构建产物或真实数据库。
 

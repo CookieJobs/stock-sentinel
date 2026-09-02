@@ -2,7 +2,7 @@
 
 ## 适用范围与读取时机
 
-本手册记录会随工程演进而变化的实现、验证与交接约定。开展代码、测试、构建、Git 或数据操作前阅读相关章节；产品判断、权限边界和长期原则以根目录 [CONSTITUTION.md](../../CONSTITUTION.md) 为准，架构与 API 细节以 [CLAUDE.md](../../CLAUDE.md) 为准。
+本手册是会随工程演进而变化的实现、验证与交接约定的唯一执行来源。开展代码、测试、构建、Git 或数据操作前阅读相关章节；产品判断、权限边界和长期原则以根目录 [CONSTITUTION.md](../../CONSTITUTION.md) 为准，架构与 API 细节以 [CLAUDE.md](../../CLAUDE.md) 为准。
 
 开始一个会话时，先执行 `git status` 和 `git log --oneline -8`，确认基线及未提交改动；他人的未提交改动不得擅自提交。随后查看 `.scratch/` 内 issue 的 `Status:`、相关 PRD 的 `## Todo` 和 `CHANGELOG.md` 最近记录，再向用户简要说明现状与本次计划。
 
@@ -12,12 +12,10 @@
 
 ## 第一次接手
 
-- 阅读 `CONTEXT.md`、[CLAUDE.md 的 Architecture](../../CLAUDE.md) 与 [量化路线图](../quant-roadmap.md)，再读 `CHANGELOG.md` 最近记录。
+- 完成 `AGENTS.md` 规定的宪法加载门后，阅读 `CONTEXT.md`、[CLAUDE.md 的 Architecture](../../CLAUDE.md) 与 [量化路线图](../quant-roadmap.md)，再读 `CHANGELOG.md` 最近记录。
 - 运行 `./start.sh`，通过 `http://localhost:5173` 浏览 6 个页面；开发时只访问该地址，由 Vite 将 `/api` 转发到 `:8000`。
 - 运行 `python -m pytest backend/tests/ -q`，确认当前完整测试集通过。
 - 扫描 `.scratch/`，按 [issue tracker](issue-tracker.md) 选择下一项工作。
-
-远端资料所述的 `.claude/PROJECT_HISTORY.md` 和 `.claude/TODO.md` 可能受 `.gitignore` 屏蔽而不存在；缺失时以仓库内的 `CHANGELOG.md`、PRD 和上述文档为准。
 
 ## 开发与运行命令
 
@@ -54,7 +52,7 @@ cd frontend && npm run lint && npm run build
 
 ## 量化引擎代码规范
 
-- 指标和因子优先写成纯函数：`pd.Series → pd.Series`；函数内不得 `print` 或记录调试日志。
+- 指标和因子优先写成纯函数：`pd.Series → pd.Series`；函数内不得 `print` 或记录任何日志。
 - 用 `dataclass` 承载状态，例如 `Trade`、`BacktestResult`、`TradeRecord`；用 `pd.DataFrame` 承载批量回测数据。
 - 业务校验错误使用 `ValueError`，API 层错误使用 `HTTPException`。
 - 调用外部 API 必须用 `try/except` 保护，因为数据源不稳定；失败时按既有降级约定处理，不伪造成功结果。

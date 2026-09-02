@@ -47,7 +47,7 @@
 |----|----|
 | **Quant engine** | 后端自研模块 `backend/quant_engine/`（自包含）|
 | **Data source** | 拉取外部数据的抽象层（多源 fallback）|
-| **Worktree** | Git 分支隔离工作区（项目强制用）|
+| **Worktree** | Git 分支隔离工作区；使用政策以 [工程操作手册](engineering-playbook.md) 为准 |
 | **Mock** | 项目里"假数据源"——开发演示用，包含 3853 只"假"但行业分布真实的 A 股 |
 | **Tier** | 路线图分层（Tier 1 基础 / Tier 2 竞争力 / Tier 3 领先 / Tier 4 差异化）|
 | **MVP** | Minimum Viable Product（v1.0 已达成）|
@@ -143,6 +143,6 @@
 - `CLAUDE.md` — 架构 + API 速查
 - `README.md` — 用户使用手册
 - `docs/quant-roadmap.md` — 完整路线图（Tier 1-4）
-- `.claude/PROJECT_HISTORY.md` — 开发历程
-- `.claude/TODO.md` — 当前待办
+- `CHANGELOG.md` — 已交付变更与验证记录
+- `.scratch/<feature>/PRD.md` 及其 `issues/` — 当前功能计划与事项
 - `docs/adr/` — 架构决策记录

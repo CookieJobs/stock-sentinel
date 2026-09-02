@@ -1,7 +1,7 @@
 # CONTEXT.md — 项目状态快照
 
-> **30 秒读完**，新会话或新 AI 接手时**先看这个**。
-> 稳定原则看 `CONSTITUTION.md`，运行契约看 `AGENTS.md`，详细架构看 `CLAUDE.md`，工程操作看 `docs/agents/engineering-playbook.md`。
+> 完成 `AGENTS.md` 规定的 `CONSTITUTION.md` 强制加载门后，用 **30 秒读完**这份项目快照。
+> 详细架构看 `CLAUDE.md`；工程操作与完整质量门仅以 `docs/agents/engineering-playbook.md` 为准。
 
 ---
 
@@ -51,7 +51,7 @@
 │   │   ├── portfolio_service.py
 │   │   ├── data_source/      # 多源抽象
 │   │   └── api/              # FastAPI 路由
-│   └── tests/quant_engine/   # 137 个单测
+│   └── tests/quant_engine/   # 量化引擎测试
 ├── frontend/src/
 │   ├── App.jsx               # 6 路由
 │   ├── lib/api.js
@@ -97,24 +97,19 @@ cd frontend && npm install && npm run dev
 
 ---
 
-## ⚠️ 关键约束（碰了会炸）
+## ⚠️ 当前环境提示
 
-1. **worktree 模式**：**不要在 main checkout 改代码**——所有改动都在 `.worktrees/feat-xxx/` 里
-2. **Python 3.14 venv ensurepip 不兼容** —— 用 Python 3.12
-3. **测试环境数据源被限流** —— 东方财富/AkShare/BaoStock/yfinance 都封了测试 IP
-4. **Tushare 100 积分不能调任何 Pro 接口** —— 至少 200 积分
-5. **前端 lint 有 3 个 react-hooks 警告**（Dashboard.jsx 旧代码）—— 已用 `eslint-disable` 压住
+1. **Python 3.14 venv ensurepip 不兼容** —— 用 Python 3.12
+2. **测试环境数据源被限流** —— 东方财富/AkShare/BaoStock/yfinance 都封了测试 IP
+3. **Tushare 100 积分不能调任何 Pro 接口** —— 至少 200 积分
+4. **前端 lint 有 3 个 react-hooks 警告**（Dashboard.jsx 旧代码）—— 已用 `eslint-disable` 压住
 
 ---
 
-## 🧪 质量门
+## 🧪 工程验证入口
 
-```bash
-.venv/bin/python -m pytest backend/tests/quant_engine/ -q    # 137 测
-cd frontend && npm run lint && npm run build               # 0 errors, 486KB
-```
-
-**任何 commit 前必须跑过这两个**。
+worktree 使用政策、开发命令与 commit 前完整质量门统一维护在
+`docs/agents/engineering-playbook.md`；本快照不复制易失效的命令、数量或产物大小。
 
 ---
 
@@ -124,7 +119,7 @@ cd frontend && npm run lint && npm run build               # 0 errors, 486KB
 |----|----|
 | 6 页面 | ✅ 监控 / 图表 / 选股 / 回测 / 组合 / 风险 |
 | 13 指标 + 15 因子 + 4 策略 | ✅ |
-| 137 后端测试 | ✅ 5 个真 bug 已修 |
+| 后端测试 | ✅ 当前完整测试集通过；精确结果见 `CHANGELOG.md` 最新记录 |
 | 5524 只 A 股真实代码入库 | ✅ AkShare fallback |
 | PE/PB 估值数据 | ⚠️ 等 Tushare 200 积分（5 分钟）|
 | 10+ 年长历史 K 线 | ⚠️ 等 BaoStock 接入（30 分钟）|
@@ -142,4 +137,4 @@ cd frontend && npm run lint && npm run build               # 0 errors, 486KB
 4. **读** `CLAUDE.md` 的"Architecture"段与 `docs/agents/engineering-playbook.md`（代码工作指南）
 5. 按任务需要阅读当前 PRD、issues、ADR、领域文档与量化路线图
 
-新工作流 → 建 worktree → 改 → 测 → commit → push → PR。
+新工作按 `AGENTS.md` 的“模式 B 工作循环”推进；Git、worktree、验证与提交细节以工程手册为准。

@@ -116,7 +116,7 @@
 
 # Changelog
 
-AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加条目。
+AI 维护者每次收工时按 `AGENTS.md`“主动汇报与完成纪律”在此追加条目。
 
 ## 2026-08-20 — 数据源中文名 + 东财 https 自动降级 + Yahoo 美股第二源
 
@@ -335,9 +335,10 @@ AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加�
 ## 2026-09-02 — AI 治理分层落地完成
 
 - 建立并验收三层治理结构：`CONSTITUTION.md` 作为稳定的产品与治理原则，`AGENTS.md` 作为自动加载的入口与执行契约，`docs/agents/engineering-playbook.md` 承接可变工程细节；`CONTEXT.md` 已同步为接手导航。
-- 本轮仅变更治理文档；未修改运行时代码、API、构建产物、依赖、环境配置或 `data/sentinel.db`。
-- 稳定基准 `2f3b8b6` 至审计时 `HEAD` 的实施提交：`e2dc113`（宪法）、`cbd2ce9`（工程手册）、`bbb2c21`（恢复领域术语权威来源）、`297fca7`（Agent 入口与执行契约）、`94bff85`（接手导航）。旧版 `AGENTS.md` 逐节核对后，稳定原则、入口流程、安全边界、质量门与任务模板均有明确归属，无缺失规则。
-- 结构审计：`git diff --check 2f3b8b6..HEAD` 与文件存在性检查通过；占位词扫描仅命中从旧版迁移的历史路径 ``.claude/TODO.md``，它是受 `.gitignore` 屏蔽的文件名而非未完成占位，作为基线内容保留。
+- 分支始终只改文档与当前事项记录；未修改运行时代码、API、构建产物、依赖、环境配置或 `data/sentinel.db`。最终审查后最小扩展清理了 `CLAUDE.md`、`docs/agents/domain.md`、两个当前 daily-briefing issue、实施计划及既有治理文档中的冲突规则与失效导航；未触碰 `.scratch/stock-logos/`。
+- 稳定基准 `2f3b8b6` 之后共有 6 笔实施与审计提交：`e2dc113`（宪法）、`cbd2ce9`（工程手册）、`bbb2c21`（恢复领域术语权威来源）、`297fca7`（Agent 入口与执行契约）、`94bff85`（接手导航）、`fd9c721`（分层审计记录）。旧版 `AGENTS.md` 逐节核对后，稳定原则、入口流程、安全边界、质量门与任务模板均有明确归属。
+- 最终审查修复：工程命令、worktree 政策和完整提交门只由工程手册维护；接手顺序统一为先经过宪法加载门；活动文档不再引用不存在的本地文件或旧 AGENTS 章节号；实施计划标记 `implemented`、34/34 步完成，并记录稳定审计基准、实际提交数与三项 controller 裁定；指标函数恢复为不得 `print` 或记录任何日志。
+- 结构审计：`git diff --check`、文件存在性与针对性检索通过；活动治理及引用文件中未发现失效本地路径、旧 AGENTS 章节号、重复提交门命令、固定测试数量或冲突的项目级 worktree 强制规则。
 - Fresh Agent 只读验收（exit 0、未改工作树）正确复述目标用户、三个核心原则、真实/可追溯数据和量化偏差/成本防线、全部人工升级边界，以及 PRD → issue → 实现 → 验证 → 提交 → 记录循环，并引用 `CONSTITUTION.md` 与 `AGENTS.md`。
-- 完整质量门：`python -m pytest backend/tests/ -q` 为 232 passed、1 条既有 `test_zero_initial_capital` 除零 RuntimeWarning；`python backend/test_data_fetcher.py` 全部通过；前端 `npm run lint && npm run build` 通过。构建仍有既有单个压缩后 chunk 超过 500 kB 的 Vite 警告，未由本轮引入。
+- 最终修复后复跑工程手册完整质量门：后端当前完整测试集与数据抓取冒烟通过，前端 lint 与 build 通过；仅保留既有 `test_zero_initial_capital` 除零 RuntimeWarning 和 Vite 单个压缩后 chunk 超过 500 kB 的警告。
 - 后续项（本轮范围外）：可另行立项自动化文档 lint，用于链接、规则重复、陈旧命令和占位词的语义检查。

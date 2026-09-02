@@ -1,6 +1,8 @@
 # StockSentinel AI Governance Constitution Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+Status: implemented
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Completed steps use checked checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Establish a three-layer AI governance system that makes StockSentinel's product principles mandatory while keeping the automatically loaded agent instructions concise and the engineering rules complete.
 
@@ -10,21 +12,26 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-31-ai-governance-constitution-design.md`
 
+**Stable audit base:** `2f3b8b6`
+
+**Implementation and audit commits (6):** `e2dc113`, `cbd2ce9`, `bbb2c21`, `297fca7`, `94bff85`, `fd9c721`. This list records the implementation and audit history before the final-review fix commit.
+
+## Implementation record and controller deviations
+
+1. Task 5 used stable base `2f3b8b6` instead of the count-relative `HEAD~4`. The required Task 2 review fix added a commit, so the relative range no longer represented the pre-implementation state.
+2. The controller ran the required read-only fresh-agent comprehension check and supplied its output to the Task 5 implementer because SDD implementers could not dispatch subagents; the independent check still completed with exit 0 and did not modify the worktree.
+3. Final reporting uses the six actual implementation and audit commits listed above rather than the plan's predicted five; `bbb2c21` is the reviewed Task 2 correction and is part of the delivered history.
+
+After final review, the controller also approved a minimum docs-only scope expansion for single-source engineering policy and valid navigation. It covers the affected architecture/context/domain references, two current daily-briefing issues, this plan, and existing governance records; it excludes `.scratch/stock-logos/` and all runtime, generated, database, dependency, and configuration files. Project-wide worktree and quality-gate policy remains authoritative only in [`docs/agents/engineering-playbook.md`](../../agents/engineering-playbook.md), and indicator functions retain the original prohibition on `print` or any logging.
+
 ## Global Constraints
 
-- Make all changes in the isolated `codex/ai-governance-constitution` worktree; preserve unrelated stock-logo and visualization work in the main checkout.
+- For this governance implementation, make all changes in the isolated `codex/ai-governance-constitution` worktree; this task-specific isolation does not override the project-wide policy in the engineering playbook. Preserve unrelated stock-logo and visualization work in the main checkout.
 - Do not modify application code, generated frontend assets, database files, environment files, dependencies, or `.scratch/stock-logos/`.
 - Preserve every existing safety boundary and quality gate from the pre-change `AGENTS.md`; relocate details instead of silently dropping them.
 - Keep `CONSTITUTION.md` stable and implementation-agnostic: no release version, fixed test count, current library choice, or command that is likely to become stale.
 - Use Chinese for repository governance content and commit messages, matching the existing project style.
-- Before every commit, run all current repository gates exactly as required by the pre-change instructions:
-
-  ```bash
-  python -m pytest backend/tests/ -q
-  python backend/test_data_fetcher.py
-  cd frontend && npm run lint && npm run build
-  ```
-
+- Before every commit, run the complete current repository gate defined in the engineering playbook; do not copy its commands into secondary documents.
 - Expected baseline: the Python suite and data-fetcher smoke tests pass; frontend lint and build pass. A NumPy divide-by-zero warning in the existing risk-analysis test and Vite's existing large-chunk warning may remain, but no new failure or warning category may be introduced.
 
 ---
@@ -37,11 +44,11 @@
 - Reference: `docs/superpowers/specs/2026-08-31-ai-governance-constitution-design.md`
 - Reference: `CONTEXT.md`
 
-- [ ] **Step 1: Re-read the approved source of truth**
+- [x] **Step 1: Re-read the approved source of truth**
 
   Read the entire design spec and the current `CONTEXT.md`. Confirm that this task changes governance only and that StockSentinel remains a decision-support product, not an automated investment adviser.
 
-- [ ] **Step 2: Write the constitutional preamble and authority statement**
+- [x] **Step 2: Write the constitutional preamble and authority statement**
 
   Create `CONSTITUTION.md` with a short preamble that says:
 
@@ -50,7 +57,7 @@
   - a user instruction that conflicts with a constitutional principle must be surfaced before execution;
   - lasting exceptions require an explicit constitutional or ADR update.
 
-- [ ] **Step 3: Write the ten required principle sections**
+- [x] **Step 3: Write the ten required principle sections**
 
   Use these exact section topics, each with concrete decision rules rather than slogans:
 
@@ -67,7 +74,7 @@
 
   Include the spec's requirements for progressive disclosure, actionable summaries, low-noise alerts, data provenance/freshness/coverage, explicit degradation, future leakage and bias controls, reproducibility, benchmark and cost awareness, irreversible-action escalation, user veto power, and verified user outcomes.
 
-- [ ] **Step 4: Check constitution size and stability**
+- [x] **Step 4: Check constitution size and stability**
 
   Run:
 
@@ -79,23 +86,17 @@
 
   Expected: 80–160 lines; the required concepts are present; the final search returns no matches.
 
-- [ ] **Step 5: Review the constitution against novice and low-attention use**
+- [x] **Step 5: Review the constitution against novice and low-attention use**
 
   Read the file once as a first-time investor with a full-time job. Confirm that every core principle can answer a future product tradeoff and that no rule assumes professional quantitative knowledge or daily screen time.
 
-- [ ] **Step 6: Run repository gates**
+- [x] **Step 6: Run repository gates**
 
-  From the worktree root, run:
-
-  ```bash
-  python -m pytest backend/tests/ -q
-  python backend/test_data_fetcher.py
-  cd frontend && npm run lint && npm run build
-  ```
+  From the worktree root, run the complete repository gate from the engineering playbook.
 
   Expected: all four commands pass with only the documented baseline warnings.
 
-- [ ] **Step 7: Commit the constitution**
+- [x] **Step 7: Commit the constitution**
 
   ```bash
   git add CONSTITUTION.md
@@ -114,7 +115,7 @@
 - Reference: `docs/agents/issue-tracker.md`
 - Reference: `docs/agents/triage-labels.md`
 
-- [ ] **Step 1: Inventory the detailed rules in the existing agent manual**
+- [x] **Step 1: Inventory the detailed rules in the existing agent manual**
 
   Before rewriting `AGENTS.md`, map its detailed rules into the new playbook. The inventory must cover:
 
@@ -126,7 +127,7 @@
   - new indicator, new data source, and bug-fix templates;
   - troubleshooting, ADRs, domain terminology, handoffs, and progress inspection.
 
-- [ ] **Step 2: Create the playbook with task-oriented navigation**
+- [x] **Step 2: Create the playbook with task-oriented navigation**
 
   Write `docs/agents/engineering-playbook.md` with these sections:
 
@@ -143,18 +144,13 @@
 
   Preserve the current commands and behavior. Replace fixed test counts with wording such as “当前完整测试集”, and use links for facts already owned by `CLAUDE.md` or the issue-tracker documents.
 
-- [ ] **Step 3: Verify rule preservation and avoid duplicate principles**
+- [x] **Step 3: Verify rule preservation and avoid duplicate principles**
 
-  Run:
-
-  ```bash
-  rg -n 'pytest backend/tests|test_data_fetcher|npm run lint|npm run build|纯函数|dataclass|DataFrame|ValueError|HTTPException|try/except|worktree|500 行|__pycache__|node_modules|sentinel.db|\.env|ADR|handoff|新指标|新数据源|bug' docs/agents/engineering-playbook.md
-  rg -n '小白优先|低注意力设计|用户体验优先' docs/agents/engineering-playbook.md
-  ```
+  Search the engineering playbook for its quality-gate section and the required coding, testing, Git, safety, template, ADR, and handoff topics. Separately confirm that constitutional product principles are not duplicated there.
 
   Expected: every engineering topic is found; the second search returns no matches because product principles remain authoritative in the constitution.
 
-- [ ] **Step 4: Check every referenced file**
+- [x] **Step 4: Check every referenced file**
 
   Run:
 
@@ -166,17 +162,13 @@
 
   Expected: exit status 0 and no output.
 
-- [ ] **Step 5: Run repository gates**
+- [x] **Step 5: Run repository gates**
 
-  ```bash
-  python -m pytest backend/tests/ -q
-  python backend/test_data_fetcher.py
-  cd frontend && npm run lint && npm run build
-  ```
+  Run the complete repository gate from the engineering playbook.
 
   Expected: all four commands pass with only the documented baseline warnings.
 
-- [ ] **Step 6: Commit the playbook**
+- [x] **Step 6: Commit the playbook**
 
   ```bash
   git add docs/agents/engineering-playbook.md
@@ -194,7 +186,7 @@
 - Reference: `docs/agents/engineering-playbook.md`
 - Reference: `docs/superpowers/specs/2026-08-31-ai-governance-constitution-design.md`
 
-- [ ] **Step 1: Rewrite the mandatory loading gate at the top**
+- [x] **Step 1: Rewrite the mandatory loading gate at the top**
 
   In the first section of `AGENTS.md`, require every planning, implementation, and review agent to read `CONSTITUTION.md` completely before taking project action. State that:
 
@@ -203,7 +195,7 @@
   - failure to read the constitution blocks product and implementation decisions;
   - code changes, implementation planning, and code review also require `docs/agents/engineering-playbook.md`.
 
-- [ ] **Step 2: Add the project instruction priority**
+- [x] **Step 2: Add the project instruction priority**
 
   Record this repository-level order without claiming precedence over platform safety or tool permissions:
 
@@ -214,7 +206,7 @@
   5. context, architecture, domain, and engineering reference documents;
   6. existing code patterns, investigated when they disagree with documents.
 
-- [ ] **Step 3: Preserve the concise operating contract**
+- [x] **Step 3: Preserve the concise operating contract**
 
   Keep and tighten these sections from the old file:
 
@@ -228,7 +220,7 @@
 
   Link to the playbook instead of copying test commands, coding rules, templates, and troubleshooting details.
 
-- [ ] **Step 4: Check size and retained authority**
+- [x] **Step 4: Check size and retained authority**
 
   Run:
 
@@ -236,22 +228,19 @@
   wc -l AGENTS.md
   sed -n '1,40p' AGENTS.md
   rg -n 'CONSTITUTION.md|engineering-playbook.md|git status|\.scratch/|PRD|ready-for-agent|不可逆|sentinel.db|付费|凭据|架构|远端|CHANGELOG|本次做了什么|验证结果|需要人看的|下一步建议' AGENTS.md
-  rg -n '新指标|新数据源|dataclass|DataFrame|npm run lint|test_data_fetcher' AGENTS.md
   ```
+
+  Confirm separately that task templates, data-structure rules, and concrete gate commands do not appear in `AGENTS.md`.
 
   Expected: 100–180 lines; the loading gate appears in the first 40 lines; all authority and workflow terms are present; the final search returns no matches because those details moved to the playbook.
 
-- [ ] **Step 5: Run repository gates**
+- [x] **Step 5: Run repository gates**
 
-  ```bash
-  python -m pytest backend/tests/ -q
-  python backend/test_data_fetcher.py
-  cd frontend && npm run lint && npm run build
-  ```
+  Run the complete repository gate from the engineering playbook.
 
   Expected: all four commands pass with only the documented baseline warnings.
 
-- [ ] **Step 6: Commit the concise agent entry point**
+- [x] **Step 6: Commit the concise agent entry point**
 
   ```bash
   git add AGENTS.md
@@ -269,15 +258,15 @@
 - Reference: `AGENTS.md`
 - Reference: `docs/agents/engineering-playbook.md`
 
-- [ ] **Step 1: Correct the context document's entry points**
+- [x] **Step 1: Correct the context document's entry points**
 
-  Update `CONTEXT.md` so its opening links to versioned repository documents instead of ignored `.claude/PROJECT_HISTORY.md` or `.claude/TODO.md` files. Keep `CONTEXT.md` as the 30-second product and architecture snapshot.
+  Update `CONTEXT.md` so its opening links only to existing, versioned repository documents instead of ignored local-only history or todo files. Keep `CONTEXT.md` as the 30-second product and architecture snapshot.
 
-- [ ] **Step 2: Correct repository facts needed for onboarding**
+- [x] **Step 2: Correct repository facts needed for onboarding**
 
   Replace the stale absolute root path with `/Users/liujin/Documents/stock-sentinel/`. Do not broadly rewrite historical delivery status or roadmap content in this governance-only change.
 
-- [ ] **Step 3: Update the document tree and first-read sequence**
+- [x] **Step 3: Update the document tree and first-read sequence**
 
   Add `CONSTITUTION.md`, `AGENTS.md`, and `docs/agents/engineering-playbook.md` to the document map. Change the onboarding order to:
 
@@ -287,31 +276,28 @@
   4. `CLAUDE.md` and the engineering playbook for code work
   5. current PRD, issues, ADRs, domain docs, and roadmap as required by the task
 
-- [ ] **Step 4: Verify routing and remove dead references**
+- [x] **Step 4: Verify routing and remove dead references**
 
   Run:
 
   ```bash
   rg -n 'CONSTITUTION.md|AGENTS.md|engineering-playbook.md|/Users/liujin/Documents/stock-sentinel/' CONTEXT.md
-  if rg -n '\.claude/(PROJECT_HISTORY|TODO)\.md|myCraft/stock-sentinel' CONTEXT.md; then exit 1; fi
   for governance_path in CONSTITUTION.md AGENTS.md CONTEXT.md CLAUDE.md docs/agents/engineering-playbook.md docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/agents/domain.md docs/quant-roadmap.md; do
     test -f "$governance_path" || exit 1
   done
   ```
 
+  Confirm separately that obsolete local-only history/todo paths and the old absolute checkout path no longer appear in `CONTEXT.md`.
+
   Expected: the new paths are found, dead-path search produces no matches, and every routed file exists.
 
-- [ ] **Step 5: Run repository gates**
+- [x] **Step 5: Run repository gates**
 
-  ```bash
-  python -m pytest backend/tests/ -q
-  python backend/test_data_fetcher.py
-  cd frontend && npm run lint && npm run build
-  ```
+  Run the complete repository gate from the engineering playbook.
 
   Expected: all four commands pass with only the documented baseline warnings.
 
-- [ ] **Step 6: Commit onboarding changes**
+- [x] **Step 6: Commit onboarding changes**
 
   ```bash
   git add CONTEXT.md
@@ -331,10 +317,10 @@
 - Verify: `CONTEXT.md`
 - Verify: `docs/agents/engineering-playbook.md`
 
-- [ ] **Step 1: Run structural and formatting checks**
+- [x] **Step 1: Run structural and formatting checks**
 
   ```bash
-  git diff --check HEAD~4..HEAD
+  git diff --check 2f3b8b6..HEAD
   for governance_path in CONSTITUTION.md AGENTS.md CONTEXT.md CLAUDE.md docs/agents/engineering-playbook.md docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/agents/domain.md docs/quant-roadmap.md; do
     test -f "$governance_path" || exit 1
   done
@@ -343,18 +329,18 @@
 
   Expected: no whitespace errors, missing files, or unresolved placeholders.
 
-- [ ] **Step 2: Audit every old AGENTS.md rule against its new owner**
+- [x] **Step 2: Audit every old AGENTS.md rule against its new owner**
 
   Compare the pre-refactor file with the new two-file split:
 
   ```bash
-  git show HEAD~4:AGENTS.md > /tmp/stock-sentinel-agents-before.md
+  git show 2f3b8b6:AGENTS.md > /tmp/stock-sentinel-agents-before.md
   git diff --no-index /tmp/stock-sentinel-agents-before.md AGENTS.md || true
   ```
 
   Review the old file section by section. Confirm that stable product principles live only in `CONSTITUTION.md`, operational entry rules live in `AGENTS.md`, and engineering details live in the playbook. If any safety boundary, quality gate, or useful task template has no owner, restore it before proceeding.
 
-- [ ] **Step 3: Run a read-only fresh-agent comprehension check**
+- [x] **Step 3: Run a read-only fresh-agent comprehension check**
 
   Confirm the local Codex executable exists, then launch a clean read-only check from the worktree:
 
@@ -365,11 +351,11 @@
 
   Expected: the response identifies novice users with little time to watch markets; novice-first, low-attention, and UX-first principles; real/provenanced data plus bias/leakage/cost controls; irreversible data, credentials, paid services, architecture replacement, and real-money actions as escalation boundaries; and the PRD → issue → implementation → verification → commit → record cycle. It must cite `CONSTITUTION.md` and `AGENTS.md` without modifying files.
 
-- [ ] **Step 4: Review the fresh-agent answer and correct the source documents**
+- [x] **Step 4: Review the fresh-agent answer and correct the source documents**
 
   If the agent misses or misstates any expected item, improve the responsible governance document and repeat Step 3. Do not coach the verification prompt with wording absent from the repository.
 
-- [ ] **Step 5: Record completion and evidence**
+- [x] **Step 5: Record completion and evidence**
 
   Change the design spec status from `approved` to `implemented`. Append a dated `2026-08-31` entry to `CHANGELOG.md` containing:
 
@@ -379,26 +365,25 @@
   - the fresh-agent comprehension result;
   - any remaining follow-up, such as future automated documentation lint, explicitly marked as out of scope.
 
-- [ ] **Step 6: Run final verification**
+- [x] **Step 6: Run final verification**
 
   ```bash
   git diff --check
-  python -m pytest backend/tests/ -q
-  python backend/test_data_fetcher.py
-  cd frontend && npm run lint && npm run build
   ```
+
+  Then run the complete repository gate from the engineering playbook.
 
   Expected: no diff errors; all four project gates pass with only the documented baseline warnings.
 
-- [ ] **Step 7: Review the final diff for scope containment**
+- [x] **Step 7: Review the final diff for scope containment**
 
   ```bash
   git status --short
-  git diff --stat HEAD~4
-  git diff --name-only HEAD~4
+  git diff --stat 2f3b8b6
+  git diff --name-only 2f3b8b6
   ```
 
-  Expected changed paths are limited to:
+  At the original Task 5 audit boundary, changed paths were limited to:
 
   - `CONSTITUTION.md`
   - `AGENTS.md`
@@ -407,15 +392,15 @@
   - `docs/agents/engineering-playbook.md`
   - `docs/superpowers/specs/2026-08-31-ai-governance-constitution-design.md`
 
-  The implementation plan itself predates the four implementation commits and therefore is not expected in this final range.
+  The subsequent final-review fix uses the minimum docs-only expansion recorded above. It adds only the affected architecture, domain, current tracker, implementation-plan, and governance references; no runtime or generated files are permitted.
 
-- [ ] **Step 8: Commit the audit record**
+- [x] **Step 8: Commit the audit record**
 
   ```bash
   git add CHANGELOG.md docs/superpowers/specs/2026-08-31-ai-governance-constitution-design.md
   git commit -m "docs: 完成 AI 治理分层落地"
   ```
 
-- [ ] **Step 9: Prepare the user handoff**
+- [x] **Step 9: Prepare the user handoff**
 
-  Report the five implementation commits, exact verification results, the fresh-agent comprehension outcome, the isolated worktree path, and any baseline warning or npm audit issue that was not introduced by this work. Ask the user to review the branch diff; do not push or merge without explicit direction.
+  Report the six actual implementation and audit commits, exact verification results, the fresh-agent comprehension outcome, the isolated worktree path, and any baseline warning or npm audit issue that was not introduced by this work. Ask the user to review the branch diff; do not push or merge without explicit direction.
