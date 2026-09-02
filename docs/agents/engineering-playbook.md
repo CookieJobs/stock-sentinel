@@ -112,4 +112,4 @@ cd frontend && npm run lint && npm run build
 
 卡住时先阅读 `CHANGELOG.md` 和 `docs/adr/`，了解已有决策与踩坑记录；关键决策使用 ADR 记录，并标明被推翻的 ADR。再运行相关测试以定位问题；需要判断方向或范围时向用户提问，不自行决定重大方向。
 
-领域术语以 [Domain](domain.md) 为准；缺失术语通过 `grill-with-docs` 沉淀，而不是自行定义。长会话或换手前使用 `handoff` skill 在 `.scratch/handoff/` 生成交接文档，写明当前状态、已验证内容、未决事项和后续命令。
+领域术语以 [CONTEXT.md](../../CONTEXT.md) 为准；[Domain](domain.md) 仅作为扩展参考。缺失术语通过 `grill-with-docs` 沉淀，而不是自行定义。长会话或换手前使用 `handoff` skill 在 `.scratch/handoff/` 生成交接文档，写明当前状态、已验证内容、未决事项和后续命令。
