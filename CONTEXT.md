@@ -1,7 +1,7 @@
 # CONTEXT.md — 项目状态快照
 
 > **30 秒读完**，新会话或新 AI 接手时**先看这个**。
-> 详细架构看 `CLAUDE.md`，开发历程看 `.claude/PROJECT_HISTORY.md`，待办看 `.claude/TODO.md`。
+> 稳定原则看 `CONSTITUTION.md`，运行契约看 `AGENTS.md`，详细架构看 `CLAUDE.md`，工程操作看 `docs/agents/engineering-playbook.md`。
 
 ---
 
@@ -34,7 +34,7 @@
 ## 📂 目录速查
 
 ```
-/Users/liujin/Documents/myCraft/stock-sentinel/
+/Users/liujin/Documents/stock-sentinel/
 ├── backend/
 │   ├── main.py               # FastAPI 入口
 │   ├── monitor.py, alerter.py, data_fetcher.py  # v0.2.0 监控（保留）
@@ -62,12 +62,22 @@
 │   ├── quant-roadmap.md      # 路线图
 │   ├── agents/               # ⭐ AI 文档
 │   └── adr/                  # ⭐ 架构决策
-├── .claude/                  # ⭐ Claude Code 专属
 ├── start.sh                  # 一键启动
 ├── CLAUDE.md                 # 架构 + API 速查
+├── CONSTITUTION.md           # ⭐ 稳定产品与治理原则
+├── AGENTS.md                 # ⭐ AI 加载与执行契约
 ├── README.md                 # 用户手册
 └── CONTEXT.md                # ⭐ 你正在看的
 ```
+
+AI 文档与工程参考：
+
+- `docs/agents/engineering-playbook.md` — 代码、测试、构建、Git 与交接操作
+- `docs/agents/issue-tracker.md` — 事项格式与状态
+- `docs/agents/triage-labels.md` — 事项标签
+- `docs/agents/domain.md` — 领域术语扩展
+- `docs/quant-roadmap.md` — 量化路线图
+- `docs/adr/` — 架构决策记录
 
 ---
 
@@ -126,10 +136,10 @@ cd frontend && npm run lint && npm run build               # 0 errors, 486KB
 
 ## 🤝 接手 AI 的 5 步
 
-1. **读** `CONTEXT.md`（你已读了）
-2. **读** `CLAUDE.md` 的"Architecture"段（10 分钟）
-3. **跑** `./start.sh`，浏览器把 6 页面过一遍（5 分钟）
-4. **跑** `pytest backend/tests/quant_engine/ -q` 确认 137 都过
-5. **改代码前** 读 `.claude/PROJECT_HISTORY.md` 的"教训"段
+1. **读** `CONSTITUTION.md`（稳定产品与治理原则）
+2. **读** `CONTEXT.md`（本项目快照与领域入口）
+3. **读** `AGENTS.md`（AI 运行契约）
+4. **读** `CLAUDE.md` 的"Architecture"段与 `docs/agents/engineering-playbook.md`（代码工作指南）
+5. 按任务需要阅读当前 PRD、issues、ADR、领域文档与量化路线图
 
 新工作流 → 建 worktree → 改 → 测 → commit → push → PR。
