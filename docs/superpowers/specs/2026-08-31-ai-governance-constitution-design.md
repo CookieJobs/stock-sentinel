@@ -1,6 +1,6 @@
 # StockSentinel AI 治理与项目宪法设计
 
-Status: approved
+Status: implemented
 
 Date: 2026-08-31
 

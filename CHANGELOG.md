@@ -332,3 +332,12 @@ AI 维护者每次收工时按「收工仪式」（AGENTS.md §6）在此追加�
 - 新增持久化自定义分组（多对多关系）：同一股票可同时归入多个主题分组；支持创建、改名、删除分组，删除分组不会删除其中股票。
 - 监控列表新增分组筛选、可见行全选、批量加入分组、从当前分组移出，以及带二次确认的“删除自选”；全局删除会自动清理该股票的全部分组归属。
 - 验证：分组/股票管理 API 11/11、前端 Node 测试 5/5、前端 lint/build、数据抓取冒烟通过。量化全量套件在既有外部数据源连接重置后被中断（134 passed 后停止），与本次改动无关。
+## 2026-09-02 — AI 治理分层落地完成
+
+- 建立并验收三层治理结构：`CONSTITUTION.md` 作为稳定的产品与治理原则，`AGENTS.md` 作为自动加载的入口与执行契约，`docs/agents/engineering-playbook.md` 承接可变工程细节；`CONTEXT.md` 已同步为接手导航。
+- 本轮仅变更治理文档；未修改运行时代码、API、构建产物、依赖、环境配置或 `data/sentinel.db`。
+- 稳定基准 `2f3b8b6` 至审计时 `HEAD` 的实施提交：`e2dc113`（宪法）、`cbd2ce9`（工程手册）、`bbb2c21`（恢复领域术语权威来源）、`297fca7`（Agent 入口与执行契约）、`94bff85`（接手导航）。旧版 `AGENTS.md` 逐节核对后，稳定原则、入口流程、安全边界、质量门与任务模板均有明确归属，无缺失规则。
+- 结构审计：`git diff --check 2f3b8b6..HEAD` 与文件存在性检查通过；占位词扫描仅命中从旧版迁移的历史路径 ``.claude/TODO.md``，它是受 `.gitignore` 屏蔽的文件名而非未完成占位，作为基线内容保留。
+- Fresh Agent 只读验收（exit 0、未改工作树）正确复述目标用户、三个核心原则、真实/可追溯数据和量化偏差/成本防线、全部人工升级边界，以及 PRD → issue → 实现 → 验证 → 提交 → 记录循环，并引用 `CONSTITUTION.md` 与 `AGENTS.md`。
+- 完整质量门：`python -m pytest backend/tests/ -q` 为 232 passed、1 条既有 `test_zero_initial_capital` 除零 RuntimeWarning；`python backend/test_data_fetcher.py` 全部通过；前端 `npm run lint && npm run build` 通过。构建仍有既有单个压缩后 chunk 超过 500 kB 的 Vite 警告，未由本轮引入。
+- 后续项（本轮范围外）：可另行立项自动化文档 lint，用于链接、规则重复、陈旧命令和占位词的语义检查。
